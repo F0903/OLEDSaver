@@ -1,10 +1,12 @@
 module;
 #include <exception>
+#include <type_traits>
 export module Optional;
 
 export
 template<class T>
-class Optional {
+class Optional
+{
 	const bool hasValue;
 	const T value;
 
@@ -18,13 +20,13 @@ public:
 	}
 
 private:
-	constexpr Optional(T&& value) : value(value), hasValue(true)
-	{ }
+	constexpr Optional(T&& value) : value(value), hasValue(true) {
+	}
 
-	constexpr Optional() : value(nullptr), hasValue(false)
-	{ }
+	constexpr Optional() : value(nullptr), hasValue(false) {
+	}
 
-	[[nodiscard]] inline constexpr void assertValue() const {
+	inline constexpr void assertValue() const {
 		if (!hasValue) {
 			throw std::exception("Optional was none when unwrapped!");
 		}
@@ -35,19 +37,12 @@ public:
 		return hasValue;
 	}
 
-	[[nodiscard]] constexpr T& unwrap_value()& {
-		assertValue();
-		return value;
-	}
-	[[nodiscard]] constexpr T&& unwrap_value()&& {
+	[[nodiscard]] constexpr const T&& unwrap_value() const {
 		assertValue();
 		return std::move(value);
 	}
-	[[nodiscard]] constexpr const T& unwrap_value() const& {
-		assertValue();
-		return value;
-	}
-	[[nodiscard]] constexpr const T&& unwrap_value() const&& {
+
+	[[nodiscard]] constexpr T&& unwrap_value() {
 		assertValue();
 		return std::move(value);
 	}

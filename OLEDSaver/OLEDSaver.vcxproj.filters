@@ -24,5 +24,8 @@
     <ClCompile Include="Optional.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="ErrorHandling.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
 </Project>
