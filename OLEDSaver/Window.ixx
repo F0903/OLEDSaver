@@ -19,16 +19,16 @@ public:
 	};
 
 private:
+	inline static std::unordered_set<std::wstring> classes;
+
 	HINSTANCE hInstance;
 	std::wstring title;
 	Style style;
-
-	std::unordered_set<std::wstring> classes;
-
+	std::wstring windowClass;
 	HWND windowHandle;
 	bool closed = false;
 
-	Window(HINSTANCE hInstance, const std::wstring& title, Style style) : hInstance(hInstance), title(title), style(style), classes() {
+	Window(HINSTANCE hInstance, const std::wstring& title, Style style) : hInstance(hInstance), title(title), style(style) {
 		switch (style) {
 			case Window::Style::Normal:
 				//TODO
@@ -41,8 +41,7 @@ private:
 
 public:
 	~Window() {
-		if (closed) return;
-		DestroyWindow(windowHandle);
+		close();
 	}
 
 	static Window Normal(HINSTANCE hInstance, const std::wstring& title, int width, int height, int x, int y) {
@@ -60,25 +59,22 @@ private:
 			case WM_CLOSE:
 			{
 				auto window = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
-				window->closed = true;
-				DestroyWindow(hwnd);
+				window->close();
 				break;
-			} 
+			}
 			case WM_DESTROY:
-			{ 
 				PostQuitMessage(0);
 				break;
-			} 
 			default:
 				return DefWindowProc(hwnd, msg, wParam, lParam);
 		}
 	}
 
-	const Optional<std::wstring> registerWindowClass(const std::wstring& windowTitle) {
+	const std::wstring registerWindowClass(const std::wstring& windowTitle) {
 		std::wstring className = windowTitle;
 		className.append(L"Window");
 		if (classes.contains(className)) {
-			return Optional<std::wstring>::None();
+			return std::move(className);
 		}
 
 		const auto icon = LoadIcon(hInstance, IDI_APPLICATION);
@@ -100,13 +96,13 @@ private:
 
 		classes.insert(className);
 
-		return Optional<std::wstring>::Value(std::move(className));
+		return std::move(className);
 	}
 
 	HWND createFullscreenWindow() {
-		const std::wstring className = registerWindowClass(title).unwrap_value();
+		const auto className = registerWindowClass(title);
 		//WS_EX_TOPMOST
-		windowHandle = CreateWindowEx(0, className.c_str(), title.c_str(), WS_MAXIMIZE | WS_POPUPWINDOW | WS_VISIBLE, 0, 0, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL); 
+		windowHandle = CreateWindowEx(0, className.c_str(), title.c_str(), WS_MAXIMIZE | WS_POPUPWINDOW | WS_VISIBLE, 0, 0, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 		if (!windowHandle) {
 			throw std::exception("Unable to create window");
@@ -130,5 +126,13 @@ public:
 
 	inline HWND getHandle() const noexcept {
 		return windowHandle;
+	}
+
+	void close() {
+		if (closed) return;
+		DestroyWindow(windowHandle);
+		UnregisterClass(windowClass.c_str(), hInstance);
+		classes.erase(windowClass);
+		closed = true;
 	}
 };
