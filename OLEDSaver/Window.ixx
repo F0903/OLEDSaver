@@ -25,9 +25,16 @@ private:
 	std::wstring title;
 	Style style;
 	std::wstring windowClass;
-	HWND windowHandle;
+	HWND windowHandle; 
 	bool closed = false;
 
+	struct Size
+	{
+		int width;
+		int height;
+	} currentSize;
+
+public:
 	Window(HINSTANCE hInstance, const std::wstring& title, Style style) : hInstance(hInstance), title(title), style(style) {
 		switch (style) {
 			case Window::Style::Normal:
@@ -39,18 +46,8 @@ private:
 		}
 	}
 
-public:
 	~Window() {
 		close();
-	}
-
-	static Window Normal(HINSTANCE hInstance, const std::wstring& title, int width, int height, int x, int y) {
-		//TODO
-		throw std::exception("Not implemented.");
-	}
-
-	static Window Fullscreen(HINSTANCE hInstance, const std::wstring& title) {
-		return Window(hInstance, title, Window::Style::Fullscreen);
 	}
 
 private:
@@ -84,8 +81,7 @@ private:
 		windowClass.lpfnWndProc = WndProc;
 		windowClass.hInstance = hInstance;
 		windowClass.hIcon = icon;
-		windowClass.hCursor = LoadCursor(hInstance, IDC_ARROW);
-		windowClass.hbrBackground = (HBRUSH)(COLOR_WINDOW + 1);
+		windowClass.hCursor = LoadCursor(hInstance, IDC_ARROW); 
 		windowClass.lpszMenuName = NULL;
 		windowClass.lpszClassName = className.c_str();
 		windowClass.hIconSm = icon;
@@ -101,12 +97,21 @@ private:
 
 	HWND createFullscreenWindow() {
 		const auto className = registerWindowClass(title);
+
+		const auto screenX = GetSystemMetrics(SM_CXSCREEN);
+		const auto screenY = GetSystemMetrics(SM_CYSCREEN);
+
 		//WS_EX_TOPMOST
-		windowHandle = CreateWindowEx(0, className.c_str(), title.c_str(), WS_MAXIMIZE | WS_POPUPWINDOW | WS_VISIBLE, 0, 0, CW_USEDEFAULT, CW_USEDEFAULT, NULL, NULL, hInstance, NULL);
+		windowHandle = CreateWindowEx(0, className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 		if (!windowHandle) {
 			throw std::exception("Unable to create window");
 		}
+
+		currentSize = {
+			.width = screenX,
+			.height = screenY,
+		};
 	}
 
 public:
@@ -120,12 +125,20 @@ public:
 		}
 	}
 
+	void show() const {
+		ShowWindow(windowHandle, SW_SHOW);
+	}
+
 	inline const bool isClosed() const noexcept {
 		return closed;
 	}
 
 	inline HWND getHandle() const noexcept {
 		return windowHandle;
+	}
+
+	inline Size getSize() const noexcept {
+		return currentSize;
 	}
 
 	void close() {

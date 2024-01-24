@@ -1,11 +1,10 @@
 module;
 #include <string> 
 #include <Windows.h>
+#include <string>
 export module ErrorHandling;
 
-export void errorPopUp(const std::wstring& msg) {
-	MessageBox(NULL, msg.c_str(), L"Error!", MB_OK);
-}
+import StringUtils;
 
 export const std::wstring getLastErrorMessage() {
 	const auto code = GetLastError();
@@ -17,3 +16,14 @@ export const std::wstring getLastErrorMessage() {
 	}
 	return std::wstring(buffer);
 }
+
+export void errorPopUp(const std::wstring& msg) {   
+	auto result = MessageBox(NULL, msg.c_str(), L"Error!", MB_OK | MB_SYSTEMMODAL);
+	if (result == 0) {
+		auto wideErrorMsg = getLastErrorMessage();
+		auto errorMsg = convertWString(wideErrorMsg);
+		auto msg = std::string("Could not create error modal!\n");
+		msg.append(errorMsg);
+		throw std::exception(msg.c_str());
+	}
+} 
