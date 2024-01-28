@@ -8,6 +8,7 @@ module;
 #include <exception> 
 #include <format>
 #include <Windows.h>
+#include <fstream>
 export module D2D1Renderer;
 using namespace Microsoft::WRL;
 using namespace D2D1;
@@ -15,55 +16,26 @@ using namespace D2D1;
 import ErrorHandling;
 import Window;
 
-template<class T>
-class GDIObject
-{
-	HGDIOBJ object;
-
-public:
-	GDIObject(const HGDIOBJ& object) : object(object) {
-		auto dbg = "a";
-		auto _ = dbg;
-	}
-
-	GDIObject(HGDIOBJ&& object) : object(object) {
-		auto dbg = "a";
-		auto _ = dbg;
-	}
-
-	~GDIObject() {
-		DeleteObject(object);
-	}
-
-	T operator*() const noexcept {
-		return reinterpret_cast<T>(this);
-	}
-
-	T operator->() const noexcept {
-		return reinterpret_cast<T>(this);
-	}
-
-	T* operator&() const noexcept {
-		return reinterpret_cast<T*>(this);
-	}
-};
-
-inline void assertResult(HRESULT result) {
-	const auto msg = std::format("Error!\n Error at line {}", __LINE__);
-	if (result != S_OK) {
-		throw std::exception(msg.c_str());
-	}
+#if defined(DEBUG) || defined(_DEBUG)
+#define ASSERT(expr)\
+{\
+	const auto __result = expr;\
+	const auto __msg = std::format("Error at line {} in {}", __LINE__, __FILE__);\
+	if (__result != S_OK) {\
+		throw std::exception(__msg.c_str());\
+	}\
 }
+#else
+#define ASSERT(expr) expr;
+#endif 
 
 export class D2D1Renderer
 {
+	static constexpr auto DEFAULT_DXGI_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM;
 	static constexpr auto APP_MIN_FEATURE_LEVEL = D3D_FEATURE_LEVEL_9_1;
 	static constexpr auto DPI = 96;
 
-	static constexpr D3D_FEATURE_LEVEL featureLevels[] = {
-		D3D_FEATURE_LEVEL_12_2,
-		D3D_FEATURE_LEVEL_12_1,
-		D3D_FEATURE_LEVEL_12_0,
+	static constexpr D3D_FEATURE_LEVEL featureLevels[] = { 
 		D3D_FEATURE_LEVEL_11_1,
 		D3D_FEATURE_LEVEL_11_0,
 		D3D_FEATURE_LEVEL_10_1,
@@ -93,30 +65,22 @@ export class D2D1Renderer
 	Window& renderingWindow;
 
 public:
-	D2D1Renderer(Window& window) : renderingWindow(window) {
-		HRESULT result;
-
+	D2D1Renderer(Window& window) : renderingWindow(window) {  
 		UINT deviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #if defined(DEBUG) || defined(_DEBUG)
 		deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
-		result = D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, 0, deviceFlags, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &d3d11Device, &selectedFeatureLevel, &d3d11Context);
-		assertResult(result);
+		ASSERT(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, 0, deviceFlags, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &d3d11Device, &selectedFeatureLevel, &d3d11Context)); 
 
 		if (d3d11Device->GetFeatureLevel() < APP_MIN_FEATURE_LEVEL) {
-			errorPopUp(L"Device feature level below app minimum!");
+			ErrorPopUp(L"Device feature level below app minimum!");
 			return;
 		}
 
-		result = d3d11Device.As(&dxgiDevice);
-		assertResult(result);
-
-		result = dxgiDevice->GetParent(__uuidof(IDXGIAdapter2), &dxgiAdapter);
-		assertResult(result);
-
-		result = dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), &dxgiFactory);
-		assertResult(result);
+		ASSERT(d3d11Device.As(&dxgiDevice)); 
+		ASSERT(dxgiDevice->GetParent(__uuidof(IDXGIAdapter2), &dxgiAdapter)); 
+		ASSERT(dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), &dxgiFactory)); 
 
 		DXGI_SWAP_CHAIN_DESC1 swapchainDesc{0};
 		swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
@@ -124,7 +88,7 @@ public:
 		swapchainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
 		swapchainDesc.Scaling = DXGI_SCALING_NONE;
 		swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-		swapchainDesc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+		swapchainDesc.Format = DEFAULT_DXGI_FORMAT;
 		swapchainDesc.Stereo = FALSE;
 		swapchainDesc.Width = 0;
 		swapchainDesc.Height = 0;
@@ -132,92 +96,91 @@ public:
 		swapchainDesc.SampleDesc.Quality = 0;
 		swapchainDesc.Flags = 0;
 
-		result = dxgiFactory->CreateSwapChainForHwnd(d3d11Device.Get(), window.getHandle(), &swapchainDesc, NULL, NULL, &swapchain);
-		assertResult(result);
+		ASSERT(dxgiFactory->CreateSwapChainForHwnd(d3d11Device.Get(), window.getHandle(), &swapchainDesc, NULL, NULL, &swapchain)); 
 
 		D2D1_FACTORY_OPTIONS options{};
-		result = D2D1CreateFactory<ID2D1Factory1>(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, &d2d1Factory);
-		assertResult(result);
+		ASSERT(D2D1CreateFactory<ID2D1Factory1>(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, &d2d1Factory)); 
+		 
+		ASSERT(d2d1Factory->CreateDevice(dxgiDevice.Get(), &d2d1Device));
+		ASSERT(d2d1Device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &d2d1Context)); 
+		ASSERT(swapchain->GetBuffer(0, IID_PPV_ARGS(&dxgiBackBuffer))); 
 
-		result = d2d1Factory->CreateDevice(dxgiDevice.Get(), &d2d1Device);
-		assertResult(result);
-
-		result = d2d1Device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &d2d1Context);
-		assertResult(result);
-
-		result = swapchain->GetBuffer(0, IID_PPV_ARGS(&dxgiBackBuffer));
-		assertResult(result);
-
-		const auto bitmapProps = BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW, PixelFormat(DXGI_FORMAT_B8G8R8A8_UNORM, D2D1_ALPHA_MODE_PREMULTIPLIED), DPI, DPI);
-		result = d2d1Context->CreateBitmapFromDxgiSurface(dxgiBackBuffer.Get(), bitmapProps, &d2d1TargetBitmap);
-		assertResult(result);
+		const auto bitmapProps = BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW, PixelFormat(DEFAULT_DXGI_FORMAT, D2D1_ALPHA_MODE_PREMULTIPLIED), DPI, DPI);
+		ASSERT(d2d1Context->CreateBitmapFromDxgiSurface(dxgiBackBuffer.Get(), bitmapProps, &d2d1TargetBitmap)); 
 
 		d2d1Context->SetTarget(d2d1TargetBitmap.Get());
 
-		result = d2d1Context->CreateSolidColorBrush(ColorF(ColorF::Red), &d2d1BrushBlack);
-		assertResult(result);
+		ASSERT(d2d1Context->CreateSolidColorBrush(ColorF(ColorF::Red), &d2d1BrushBlack)); 
 	}
 
-	ComPtr<ID3D11Texture2D> GrabScreenContent(UINT outputNum) const {
-		//const auto [width, height] = renderingWindow.getSize();
-
-		//auto dcScreen = GetDC(NULL);
-		//auto dcTarget = CreateCompatibleDC(dcScreen);
-		//auto bmpTarget = CreateCompatibleBitmap(dcScreen, width, height);
-		//auto oldBmp = SelectObject(dcTarget, bmpTarget);
-		//const auto result = BitBlt(dcTarget, 0, 0, width, height, dcScreen, 0, 0, SRCCOPY | CAPTUREBLT);
-		//if (!result) {
-		//	throw std::exception("Could not blit screen grab!");
-		//}
-
-		//SelectObject(dcTarget, oldBmp);
-		//DeleteObject(dcTarget);
-		//ReleaseDC(NULL, dcScreen);
-		////TODO wrap bitmap in smart pointer and return it.
-
-		//auto bitmap = GDIObject<HBITMAP>(bmpTarget);
-		//return std::move(bitmap);
-		
-		HRESULT result;
-
+	void GrabScreenContent(UINT outputNum) const {   
 		ComPtr<IDXGIOutput> output;
-		result = dxgiAdapter->EnumOutputs(outputNum, &output);
-		assertResult(result);
+		ASSERT(dxgiAdapter->EnumOutputs(outputNum, &output)); 
 
 		ComPtr<IDXGIOutput1> outputV1;
-		result = output->QueryInterface<IDXGIOutput1>(&outputV1);
-		assertResult(result);
+		ASSERT(output->QueryInterface<IDXGIOutput1>(&outputV1)); 
 
 		ComPtr<IDXGIOutputDuplication> duplication;
-		result = outputV1->DuplicateOutput(d3d11Device.Get(), &duplication);
-		assertResult(result);
-
+		ASSERT(outputV1->DuplicateOutput(d3d11Device.Get(), &duplication)); 
+		 
 		ComPtr<IDXGIResource> desktopResource;
 		DXGI_OUTDUPL_FRAME_INFO duplFrameInfo{0};
-		result = duplication->AcquireNextFrame(30, &duplFrameInfo, &desktopResource);
-		assertResult(result);
+		duplication->ReleaseFrame();
+		ASSERT(duplication->AcquireNextFrame(30, &duplFrameInfo, &desktopResource)); 
 
-		ComPtr<ID3D11Texture2D> desktopImage;
-		result = desktopResource->QueryInterface<ID3D11Texture2D>(&desktopImage);
-		assertResult(result); 
+		ComPtr<IDXGISurface> desktopImage;
+		ASSERT(desktopResource->QueryInterface<IDXGISurface>(&desktopImage)); 
 
-		return std::move(desktopImage);
-	}
+		ComPtr<ID3D11Texture2D> desktopTexture;
+		ASSERT(desktopImage->QueryInterface<ID3D11Texture2D>(&desktopTexture)); 
+
+		D3D11_TEXTURE2D_DESC desktopTextureDesc{0};
+		desktopTexture->GetDesc(&desktopTextureDesc);
+		const auto [width, height] = renderingWindow.getSize();
+		D3D11_TEXTURE2D_DESC textureDesc{
+			.Width = static_cast<UINT>(width),
+			.Height = static_cast<UINT>(height),
+			.MipLevels = desktopTextureDesc.MipLevels,
+			.ArraySize = desktopTextureDesc.ArraySize,
+			.Format = desktopTextureDesc.Format,
+			.SampleDesc = desktopTextureDesc.SampleDesc,
+			.Usage = D3D11_USAGE_STAGING, 
+			.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE,
+			.MiscFlags = 0,
+		};
+		ComPtr<ID3D11Texture2D> finalTexture;
+		ASSERT(d3d11Device->CreateTexture2D(&textureDesc, NULL, &finalTexture)); 
+		
+		ComPtr<IDXGIKeyedMutex> desktopMutex;
+		ASSERT(desktopTexture.As(&desktopMutex));
+
+		ASSERT(desktopMutex->AcquireSync(0, 30));
+		d3d11Context->CopyResource(finalTexture.Get(), desktopTexture.Get());
+		desktopMutex->ReleaseSync(0); 
+
+		ComPtr<IDXGISurface> finalTextureSurface;
+		ASSERT(finalTexture->QueryInterface<IDXGISurface>(&finalTextureSurface)); 
+
+		DXGI_MAPPED_RECT rawImage{0};
+		ASSERT(finalTextureSurface->Map(&rawImage, DXGI_MAP_READ)); 
+
+		std::ofstream debugOut("debug.bmp", std::ios::binary | std::ios::trunc);
+		debugOut << rawImage.pBits;
+
+		//return desktopImage;
+	} 
 
 	void DrawFullscreenRect() const noexcept {
 		const auto windowSize = renderingWindow.getSize();
 
 		//testing
-		static auto screenTexture = GrabScreenContent(0);
+		/*static auto screenTexture = */ GrabScreenContent(0);
 
 		d2d1Context->BeginDraw();
 		//d2d1Context->DrawBitmap(screenTexture, RectF(800, 800, 1200, 1200));
-		d2d1Context->FillRectangle(RectF(0, 0, windowSize.width - 1500, windowSize.height - 500), d2d1BrushBlack.Get()); 
+		d2d1Context->FillRectangle(RectF(0, 0, windowSize.width - 1500, windowSize.height - 500), d2d1BrushBlack.Get());
+		ASSERT(d2d1Context->EndDraw());
 
-		HRESULT result;
-		result = d2d1Context->EndDraw();
-		assertResult(result);
-		result = swapchain->Present(1, 0);
-		assertResult(result);
+		ASSERT(swapchain->Present(1, 0)); 
 	}
 };

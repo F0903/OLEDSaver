@@ -5,23 +5,27 @@ module;
 export module ErrorHandling;
 
 import StringUtils;
+import Optional;
 
-export const std::wstring getLastErrorMessage() {
+export OptionalValue<const std::wstring> GetLastErrorMessage() {
 	const auto code = GetLastError();
+	if (code == 0) {
+		return Optional::None<const std::wstring>();
+	}
 	constexpr int BUF_SIZE = 1024;
 	wchar_t buffer[BUF_SIZE];
 	const auto count = FormatMessage(FORMAT_MESSAGE_FROM_SYSTEM, NULL, code, NULL, buffer, BUF_SIZE, NULL);
 	if (count == 0) {
 		throw std::exception("Could not format error message!");
 	}
-	return std::wstring(buffer);
+	return Optional::Value(std::wstring(buffer));
 }
 
-export void errorPopUp(const std::wstring& msg) {   
+export void ErrorPopUp(const std::wstring& msg) {   
 	auto result = MessageBox(NULL, msg.c_str(), L"Error!", MB_OK | MB_SYSTEMMODAL);
 	if (result == 0) {
-		auto wideErrorMsg = getLastErrorMessage();
-		auto errorMsg = convertWString(wideErrorMsg);
+		auto wideErrorMsg = GetLastErrorMessage();
+		auto errorMsg = wideErrorMsg.HasValue() ? ConvertWString(wideErrorMsg.Unwrap()) : "No error specified.";
 		auto msg = std::string("Could not create error modal!\n");
 		msg.append(errorMsg);
 		throw std::exception(msg.c_str());

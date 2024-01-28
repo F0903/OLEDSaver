@@ -1,49 +1,62 @@
 module;
-#include <exception>
-#include <type_traits>
+#include <exception> 
 export module Optional;
 
 export
 template<class T>
-class Optional
+class OptionalValue
 {
 	const bool hasValue;
 	const T value;
 
-public:
-	[[nodiscard]] static constexpr Optional<T> Value(T&& value) noexcept {
-		return Optional<T>(std::forward<T>(value));
+public:  
+	inline constexpr OptionalValue(const T& value) : value(value), hasValue(true) {
 	}
 
-	[[nodiscard]] static constexpr Optional<T> None() noexcept {
-		return Optional<T>();
+	inline constexpr OptionalValue(T&& value) : value(value), hasValue(true) {
 	}
 
-private:
-	constexpr Optional(T&& value) : value(value), hasValue(true) {
+	inline constexpr OptionalValue() : hasValue(false) {
 	}
 
-	constexpr Optional() : value(nullptr), hasValue(false) {
-	}
-
-	inline constexpr void assertValue() const {
+	inline constexpr void AssertValue() const {
 		if (!hasValue) {
 			throw std::exception("Optional was none when unwrapped!");
 		}
+	} 
+
+	inline constexpr operator OptionalValue<const T>() {
+		return OptionalValue<const T>(value);
 	}
 
 public:
-	[[nodiscard]] constexpr bool has_value() const noexcept {
+	[[nodiscard]] constexpr bool HasValue() const noexcept {
 		return hasValue;
 	}
 
-	[[nodiscard]] constexpr const T&& unwrap_value() const {
-		assertValue();
+	[[nodiscard]] constexpr T&& Unwrap() const {
+		AssertValue();
 		return std::move(value);
 	}
 
-	[[nodiscard]] constexpr T&& unwrap_value() {
-		assertValue();
+	[[nodiscard]] constexpr T&& Unwrap() {
+		AssertValue();
 		return std::move(value);
 	}
 };
+
+export namespace Optional
+{
+
+template<class T>
+[[nodiscard]] constexpr auto Value(T&& value) noexcept {
+	return OptionalValue<T>(std::forward<T>(value));
+}
+
+template<class T>
+[[nodiscard]] constexpr auto None() noexcept {
+	return OptionalValue<T>();
+}
+
+}
+
