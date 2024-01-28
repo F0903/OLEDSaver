@@ -19,7 +19,7 @@ template<auto length = 256>
 std::wstring ConvertString(const std::string& str) {
 	wchar_t buf[length]{};
 	if (str.length() >= length) throw std::exception("convertString input too large!");
-	const auto count = MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, str.c_str(), str.length(), buf, sizeof(buf) * sizeof(wchar_t));
+	const auto count = MultiByteToWideChar(CP_UTF8, MB_COMPOSITE, str.c_str(), static_cast<int>(str.length()), buf, sizeof(buf) * sizeof(wchar_t));
 	auto newStr = std::wstring(buf, count); 
 	return newStr;
 }

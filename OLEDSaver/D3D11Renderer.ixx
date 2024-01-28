@@ -6,24 +6,34 @@ module;
 #include <wrl.h>
 #include <Windows.h>
 #include <fstream>
-#include "DirectXTex/DirectXTex/DirectXTex.h"
+#include <ppltasks.h>
+#include <string>  
 #include "MacroUtils.h"
-export module D2D1Renderer;
+export module D3D11Renderer;
 
 using namespace Microsoft::WRL;
-using namespace D2D1;
-using namespace DirectX;
+using namespace D2D1; 
+using namespace concurrency;
 
 import ErrorHandling;
 import Window;
+import Shader;
 
-export class D2D1Renderer
+struct Vertex
+{
+	float x, y, z;
+	struct Color {
+		float r, g, b, a;
+	} color;
+};
+
+export class D3D11Renderer
 {
 	static constexpr auto DEFAULT_DXGI_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM;
 	static constexpr auto APP_MIN_FEATURE_LEVEL = D3D_FEATURE_LEVEL_9_1;
 	static constexpr auto DPI = 96;
 
-	static constexpr D3D_FEATURE_LEVEL featureLevels[] = { 
+	static constexpr D3D_FEATURE_LEVEL featureLevels[] = {
 		D3D_FEATURE_LEVEL_11_1,
 		D3D_FEATURE_LEVEL_11_0,
 		D3D_FEATURE_LEVEL_10_1,
@@ -38,12 +48,6 @@ export class D2D1Renderer
 	ComPtr<ID3D11Device> d3d11Device;
 	ComPtr<ID3D11DeviceContext> d3d11Context;
 
-	ComPtr<ID2D1Factory1> d2d1Factory;
-	ComPtr<ID2D1Device> d2d1Device;
-	ComPtr<ID2D1DeviceContext> d2d1Context;
-	ComPtr<ID2D1Bitmap1> d2d1TargetBitmap;
-	ComPtr<ID2D1SolidColorBrush> d2d1BrushBlack;
-
 	ComPtr<IDXGIDevice2> dxgiDevice;
 	ComPtr<IDXGIAdapter2> dxgiAdapter;
 	ComPtr<IDXGIFactory2> dxgiFactory;
@@ -52,7 +56,10 @@ export class D2D1Renderer
 
 	Window& renderingWindow;
 
-public:
+	std::vector<task<void>> shadersLoading;
+	std::vector<VertexShader> vertexShaders;
+	std::vector<PixelShader> pixelShaders;
+
 	// Select the best adapter based on the most dedicated video memory. (a little primitive)
 	void SelectBestAdapter() {
 		int i = 0;
@@ -61,7 +68,7 @@ public:
 		IDXGIAdapter* currentAdapter;
 		while (true) {
 			const auto result = dxgiFactory->EnumAdapters(i++, &currentAdapter);
-			if (result == DXGI_ERROR_NOT_FOUND) 
+			if (result == DXGI_ERROR_NOT_FOUND)
 				break;
 			ASSERT(result);
 
@@ -74,16 +81,17 @@ public:
 			}
 			currentAdapter->Release();
 		}
-		
+
 		if (!bestAdapter) throw std::exception("No suitable adapter was found!");
 
 		ASSERT(bestAdapter->QueryInterface<IDXGIAdapter2>(&dxgiAdapter));
 	}
 
-	D2D1Renderer(Window& window) : renderingWindow(window) {   
+public:
+	D3D11Renderer(Window& window) : renderingWindow(window) {
 		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
 		SelectBestAdapter();
-		
+
 		UINT deviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #if defined(DEBUG) || defined(_DEBUG)
 		deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
@@ -96,9 +104,9 @@ public:
 			return;
 		}
 
-		ASSERT(d3d11Device.As(&dxgiDevice)); 
-		ASSERT(dxgiDevice->GetParent(__uuidof(IDXGIAdapter2), &dxgiAdapter)); 
-		ASSERT(dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), &dxgiFactory)); 
+		ASSERT(d3d11Device.As(&dxgiDevice));
+		ASSERT(dxgiDevice->GetParent(__uuidof(IDXGIAdapter2), &dxgiAdapter));
+		ASSERT(dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), &dxgiFactory));
 
 		DXGI_SWAP_CHAIN_DESC1 swapchainDesc{0};
 		swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
@@ -114,36 +122,23 @@ public:
 		swapchainDesc.SampleDesc.Quality = 0;
 		swapchainDesc.Flags = 0;
 
-		ASSERT(dxgiFactory->CreateSwapChainForHwnd(d3d11Device.Get(), window.getHandle(), &swapchainDesc, NULL, NULL, &swapchain)); 
-
-		D2D1_FACTORY_OPTIONS options{};
-		ASSERT(D2D1CreateFactory<ID2D1Factory1>(D2D1_FACTORY_TYPE_SINGLE_THREADED, options, &d2d1Factory)); 
-		 
-		ASSERT(d2d1Factory->CreateDevice(dxgiDevice.Get(), &d2d1Device));
-		ASSERT(d2d1Device->CreateDeviceContext(D2D1_DEVICE_CONTEXT_OPTIONS_NONE, &d2d1Context)); 
-		ASSERT(swapchain->GetBuffer(0, IID_PPV_ARGS(&dxgiBackBuffer))); 
-
-		const auto bitmapProps = BitmapProperties1(D2D1_BITMAP_OPTIONS_TARGET | D2D1_BITMAP_OPTIONS_CANNOT_DRAW, PixelFormat(DEFAULT_DXGI_FORMAT, D2D1_ALPHA_MODE_PREMULTIPLIED), DPI, DPI);
-		ASSERT(d2d1Context->CreateBitmapFromDxgiSurface(dxgiBackBuffer.Get(), bitmapProps, &d2d1TargetBitmap)); 
-
-		d2d1Context->SetTarget(d2d1TargetBitmap.Get());
-
-		ASSERT(d2d1Context->CreateSolidColorBrush(ColorF(ColorF::Red), &d2d1BrushBlack)); 
+		ASSERT(dxgiFactory->CreateSwapChainForHwnd(d3d11Device.Get(), window.getHandle(), &swapchainDesc, NULL, NULL, &swapchain));
 	}
 
+private:
 	ComPtr<ID3D11Texture2D> GrabScreenContent(UINT outputNum, UINT timeout = 100) const {
 		ComPtr<IDXGIOutput> output;
-		ASSERT(dxgiAdapter->EnumOutputs(outputNum, &output)); 
+		ASSERT(dxgiAdapter->EnumOutputs(outputNum, &output));
 
 		ComPtr<IDXGIOutput5> outputV5;
-		ASSERT(output->QueryInterface<IDXGIOutput5>(&outputV5)); 
+		ASSERT(output->QueryInterface<IDXGIOutput5>(&outputV5));
 
 		ComPtr<IDXGIOutputDuplication> duplication;
 		DXGI_FORMAT supportedFormats[] = {
 			DEFAULT_DXGI_FORMAT
 		};
 		ASSERT(outputV5->DuplicateOutput1(d3d11Device.Get(), NULL, sizeof(supportedFormats) / sizeof(supportedFormats[0]), supportedFormats, &duplication));
-		 
+
 		ComPtr<IDXGIResource> desktopResource;
 		DXGI_OUTDUPL_FRAME_INFO duplFrameInfo{0};
 		while (true) {
@@ -154,13 +149,13 @@ public:
 		}
 
 		ComPtr<IDXGISurface> desktopImage;
-		ASSERT(desktopResource->QueryInterface<IDXGISurface>(&desktopImage)); 
+		ASSERT(desktopResource->QueryInterface<IDXGISurface>(&desktopImage));
 
 		ComPtr<ID3D11Texture2D> desktopTexture;
-		ASSERT(desktopImage->QueryInterface<ID3D11Texture2D>(&desktopTexture)); 
+		ASSERT(desktopImage->QueryInterface<ID3D11Texture2D>(&desktopTexture));
 
 		D3D11_TEXTURE2D_DESC desktopTextureDesc{0};
-		desktopTexture->GetDesc(&desktopTextureDesc); 
+		desktopTexture->GetDesc(&desktopTextureDesc);
 		D3D11_TEXTURE2D_DESC textureDesc{
 			.Width = desktopTextureDesc.Width,
 			.Height = desktopTextureDesc.Height,
@@ -168,28 +163,91 @@ public:
 			.ArraySize = desktopTextureDesc.ArraySize,
 			.Format = desktopTextureDesc.Format,
 			.SampleDesc = desktopTextureDesc.SampleDesc,
-			.Usage = D3D11_USAGE_STAGING, 
+			.Usage = D3D11_USAGE_STAGING,
 			.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE,
 			.MiscFlags = 0,
 		};
 		ComPtr<ID3D11Texture2D> stagingTexture;
-		ASSERT(d3d11Device->CreateTexture2D(&textureDesc, NULL, &stagingTexture));  
-		d3d11Context->CopyResource(stagingTexture.Get(), desktopTexture.Get());  
+		ASSERT(d3d11Device->CreateTexture2D(&textureDesc, NULL, &stagingTexture));
+		d3d11Context->CopyResource(stagingTexture.Get(), desktopTexture.Get());
 
 		return stagingTexture;
-	} 
+	}
+
+	void LoadShaderAsync(const ShaderInfo& info) {
+		auto shaderTask = concurrency::create_task([this, info]() {
+			std::ifstream shaderFile(info.name, std::ios::binary);
+			shaderFile.seekg(0, std::ios::end);
+			const auto size = shaderFile.gcount();
+			shaderFile.seekg(0, std::ios::beg);
+
+			auto buf = new char[size];
+			shaderFile.read(buf, size);
+
+			switch (info.type) {
+				case ShaderInfo::ShaderType::Vertex:
+				{
+					const auto vertexShaderInfo = static_cast<VertexShaderInfo>(info);
+					ComPtr<ID3D11VertexShader> shader;
+					ASSERT(d3d11Device->CreateVertexShader(buf, size, nullptr, &shader));
+					const auto& descriptors = vertexShaderInfo.inputDescriptors;
+
+					ComPtr<ID3D11InputLayout> inputLayout;
+					ASSERT(d3d11Device->CreateInputLayout(reinterpret_cast<const D3D11_INPUT_ELEMENT_DESC*>(&descriptors), descriptors.size(), buf, size, &inputLayout));
+					vertexShaders.push_back({std::move(vertexShaderInfo), std::move(shader), std::move(inputLayout)});
+					break;
+				}
+				case ShaderInfo::ShaderType::Pixel:
+				{
+					ComPtr<ID3D11PixelShader> shader;
+					ASSERT(d3d11Device->CreatePixelShader(buf, size, nullptr, &shader));
+					pixelShaders.push_back({std::move(info), std::move(shader)});
+					break;
+				}
+			}
+
+			delete[] buf;
+		});
+		shadersLoading.push_back(std::move(shaderTask));
+	}
+
+	inline void EnsureShadersLoaded() const { 
+	}
+
+public:
+	template<auto n>
+	inline void LoadShadersAsync(ShaderInfo shaders[n]) {
+		for (size_t i = 0; i < n; i++) {
+			const auto& shader = shaders[i];
+			LoadShaderAsync(shader);
+		}
+	}
+
+	inline void SetActiveLoadedVertexShader(size_t index) const noexcept {
+		const auto& shader = vertexShaders[index];
+		d3d11Context->VSSetShader(shader.vertexShader.Get(), NULL, NULL);
+	}
+
+	inline void SetActiveLoadedPixelShader(size_t index) const noexcept {
+		const auto& shader = pixelShaders[index];
+		d3d11Context->PSSetShader(shader.pixelShader.Get(), NULL, NULL);
+	}
+
+	void CreateFullscreenRect() {
+		constexpr Vertex vertices[] = {
+			{0.0f, 0.5f, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
+			{0.5f, -0.5f, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
+			{-0.5f, -0.5f, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
+		};
+
+
+	}
 
 	void DrawFullscreenRect() const {
 		const auto windowSize = renderingWindow.getSize();
 
-		//testing
-		/*static auto screenTexture = */ GrabScreenContent(0);
 
-		d2d1Context->BeginDraw();
-		//d2d1Context->DrawBitmap(screenTexture, RectF(800, 800, 1200, 1200));
-		d2d1Context->FillRectangle(RectF(0, 0, windowSize.width - 1500, windowSize.height - 500), d2d1BrushBlack.Get());
-		ASSERT(d2d1Context->EndDraw());
 
-		ASSERT(swapchain->Present(1, 0)); 
+		ASSERT(swapchain->Present(1, 0));
 	}
 };

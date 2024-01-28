@@ -146,10 +146,11 @@
     </Manifest>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="D2D1Renderer.ixx" />
+    <ClCompile Include="D3D11Renderer.ixx" />
     <ClCompile Include="ErrorHandling.ixx" />
     <ClCompile Include="main.cpp" />
     <ClCompile Include="Optional.ixx" />
+    <ClCompile Include="Shader.ixx" />
     <ClCompile Include="StringUtils.ixx" />
     <ClCompile Include="Window.ixx" />
   </ItemGroup>

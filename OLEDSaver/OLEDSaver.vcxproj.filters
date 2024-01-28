@@ -27,10 +27,13 @@
     <ClCompile Include="ErrorHandling.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
-    <ClCompile Include="D2D1Renderer.ixx">
+    <ClCompile Include="D3D11Renderer.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
     <ClCompile Include="StringUtils.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
+    <ClCompile Include="Shader.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
   </ItemGroup>

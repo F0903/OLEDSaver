@@ -6,20 +6,20 @@
 
 import Window;
 import ErrorHandling;
-import D2D1Renderer;
+import D3D11Renderer;
 import StringUtils;
 
 int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In_ PSTR cmdLine, _In_ int cmdShow) {
 	ASSERT(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
 
 	Window* window = nullptr;
-	D2D1Renderer* renderer = nullptr; 
+	D3D11Renderer* renderer = nullptr; 
 	try {
 		window = new Window(instance, L"OLEDSaver", Window::Style::Fullscreen);
 		window->update();
 		window->show();
 
-		renderer = new D2D1Renderer(*window);
+		renderer = new D3D11Renderer(*window);
 
 		MSG message{0};
 		PeekMessage(&message, NULL, 0, 0, PM_NOREMOVE);

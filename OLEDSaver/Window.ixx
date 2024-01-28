@@ -61,10 +61,11 @@ private:
 			}
 			case WM_DESTROY:
 				PostQuitMessage(0);
-				break;
+				break; 
 			default:
-				return DefWindowProc(hwnd, msg, wParam, lParam);
+				break;
 		}
+		return DefWindowProc(hwnd, msg, wParam, lParam);
 	}
 
 	const std::wstring registerWindowClass(const std::wstring& windowTitle) {
@@ -95,14 +96,13 @@ private:
 		return std::move(className);
 	}
 
-	HWND createFullscreenWindow() {
+	void createFullscreenWindow() {
 		const auto className = registerWindowClass(title);
 
 		const auto screenX = GetSystemMetrics(SM_CXSCREEN);
 		const auto screenY = GetSystemMetrics(SM_CYSCREEN);
 
-		//WS_EX_TOPMOST
-		windowHandle = CreateWindowEx(0, className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
+		windowHandle = CreateWindowEx(WS_EX_TOPMOST, className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 		if (!windowHandle) {
 			throw std::exception("Unable to create window");
