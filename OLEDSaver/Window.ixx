@@ -25,7 +25,7 @@ private:
 	std::wstring title;
 	Style style;
 	std::wstring windowClass;
-	HWND windowHandle; 
+	HWND windowHandle;
 	bool closed = false;
 
 	struct Size
@@ -61,7 +61,7 @@ private:
 			}
 			case WM_DESTROY:
 				PostQuitMessage(0);
-				break; 
+				break;
 			default:
 				break;
 		}
@@ -82,7 +82,7 @@ private:
 		windowClass.lpfnWndProc = WndProc;
 		windowClass.hInstance = hInstance;
 		windowClass.hIcon = icon;
-		windowClass.hCursor = LoadCursor(hInstance, IDC_ARROW); 
+		windowClass.hCursor = LoadCursor(hInstance, IDC_ARROW);
 		windowClass.lpszMenuName = NULL;
 		windowClass.lpszClassName = className.c_str();
 		windowClass.hIconSm = icon;
@@ -102,7 +102,15 @@ private:
 		const auto screenX = GetSystemMetrics(SM_CXSCREEN);
 		const auto screenY = GetSystemMetrics(SM_CYSCREEN);
 
-		windowHandle = CreateWindowEx(WS_EX_TOPMOST, className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
+		//TODO: Re-add WS_EX_TOPMOST to flags when deploying
+		constexpr auto flags =
+#ifdef _DEBUG 
+			0;
+#elif
+			WS_EX_TOPMOST;
+#endif
+
+		windowHandle = CreateWindowEx(flags, className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 		if (!windowHandle) {
 			throw std::exception("Unable to create window");
