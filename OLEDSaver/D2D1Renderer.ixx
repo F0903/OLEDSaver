@@ -1,33 +1,21 @@
 module;
-#include <d3d11.h>
-#include <dxgi1_2.h>
-#include <d2d1.h>
+#include <d3d11.h> 
+#include <dxgi1_5.h> 
 #include <d2d1_1.h>
 #include <d2d1_1helper.h>
 #include <wrl.h>
-#include <exception> 
-#include <format>
 #include <Windows.h>
 #include <fstream>
+#include "DirectXTex/DirectXTex/DirectXTex.h"
+#include "MacroUtils.h"
 export module D2D1Renderer;
+
 using namespace Microsoft::WRL;
 using namespace D2D1;
+using namespace DirectX;
 
 import ErrorHandling;
 import Window;
-
-#if defined(DEBUG) || defined(_DEBUG)
-#define ASSERT(expr)\
-{\
-	const auto __result = expr;\
-	const auto __msg = std::format("Error at line {} in {}", __LINE__, __FILE__);\
-	if (__result != S_OK) {\
-		throw std::exception(__msg.c_str());\
-	}\
-}
-#else
-#define ASSERT(expr) expr;
-#endif 
 
 export class D2D1Renderer
 {
@@ -65,13 +53,43 @@ export class D2D1Renderer
 	Window& renderingWindow;
 
 public:
-	D2D1Renderer(Window& window) : renderingWindow(window) {  
+	// Select the best adapter based on the most dedicated video memory. (a little primitive)
+	void SelectBestAdapter() {
+		int i = 0;
+		IDXGIAdapter* bestAdapter = nullptr;
+		DXGI_ADAPTER_DESC bestAdapterDesc{0};
+		IDXGIAdapter* currentAdapter;
+		while (true) {
+			const auto result = dxgiFactory->EnumAdapters(i++, &currentAdapter);
+			if (result == DXGI_ERROR_NOT_FOUND) 
+				break;
+			ASSERT(result);
+
+			DXGI_ADAPTER_DESC adapterDesc{0};
+			ASSERT(currentAdapter->GetDesc(&adapterDesc));
+			if (!bestAdapter || adapterDesc.DedicatedVideoMemory > bestAdapterDesc.DedicatedVideoMemory) {
+				bestAdapter = currentAdapter;
+				bestAdapterDesc = adapterDesc;
+				continue;
+			}
+			currentAdapter->Release();
+		}
+		
+		if (!bestAdapter) throw std::exception("No suitable adapter was found!");
+
+		ASSERT(bestAdapter->QueryInterface<IDXGIAdapter2>(&dxgiAdapter));
+	}
+
+	D2D1Renderer(Window& window) : renderingWindow(window) {   
+		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
+		SelectBestAdapter();
+		
 		UINT deviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #if defined(DEBUG) || defined(_DEBUG)
 		deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
-		ASSERT(D3D11CreateDevice(nullptr, D3D_DRIVER_TYPE_HARDWARE, 0, deviceFlags, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &d3d11Device, &selectedFeatureLevel, &d3d11Context)); 
+		ASSERT(D3D11CreateDevice(dxgiAdapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, 0, deviceFlags, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &d3d11Device, &selectedFeatureLevel, &d3d11Context));
 
 		if (d3d11Device->GetFeatureLevel() < APP_MIN_FEATURE_LEVEL) {
 			ErrorPopUp(L"Device feature level below app minimum!");
@@ -113,20 +131,27 @@ public:
 		ASSERT(d2d1Context->CreateSolidColorBrush(ColorF(ColorF::Red), &d2d1BrushBlack)); 
 	}
 
-	void GrabScreenContent(UINT outputNum) const {   
+	ComPtr<ID3D11Texture2D> GrabScreenContent(UINT outputNum, UINT timeout = 100) const {
 		ComPtr<IDXGIOutput> output;
 		ASSERT(dxgiAdapter->EnumOutputs(outputNum, &output)); 
 
-		ComPtr<IDXGIOutput1> outputV1;
-		ASSERT(output->QueryInterface<IDXGIOutput1>(&outputV1)); 
+		ComPtr<IDXGIOutput5> outputV5;
+		ASSERT(output->QueryInterface<IDXGIOutput5>(&outputV5)); 
 
 		ComPtr<IDXGIOutputDuplication> duplication;
-		ASSERT(outputV1->DuplicateOutput(d3d11Device.Get(), &duplication)); 
+		DXGI_FORMAT supportedFormats[] = {
+			DEFAULT_DXGI_FORMAT
+		};
+		ASSERT(outputV5->DuplicateOutput1(d3d11Device.Get(), NULL, sizeof(supportedFormats) / sizeof(supportedFormats[0]), supportedFormats, &duplication));
 		 
 		ComPtr<IDXGIResource> desktopResource;
 		DXGI_OUTDUPL_FRAME_INFO duplFrameInfo{0};
-		duplication->ReleaseFrame();
-		ASSERT(duplication->AcquireNextFrame(30, &duplFrameInfo, &desktopResource)); 
+		while (true) {
+			duplication->ReleaseFrame();
+			const auto result = duplication->AcquireNextFrame(timeout, &duplFrameInfo, &desktopResource);
+			if (result == S_OK) break;
+			ASSERT(result);
+		}
 
 		ComPtr<IDXGISurface> desktopImage;
 		ASSERT(desktopResource->QueryInterface<IDXGISurface>(&desktopImage)); 
@@ -135,11 +160,10 @@ public:
 		ASSERT(desktopImage->QueryInterface<ID3D11Texture2D>(&desktopTexture)); 
 
 		D3D11_TEXTURE2D_DESC desktopTextureDesc{0};
-		desktopTexture->GetDesc(&desktopTextureDesc);
-		const auto [width, height] = renderingWindow.getSize();
+		desktopTexture->GetDesc(&desktopTextureDesc); 
 		D3D11_TEXTURE2D_DESC textureDesc{
-			.Width = static_cast<UINT>(width),
-			.Height = static_cast<UINT>(height),
+			.Width = desktopTextureDesc.Width,
+			.Height = desktopTextureDesc.Height,
 			.MipLevels = desktopTextureDesc.MipLevels,
 			.ArraySize = desktopTextureDesc.ArraySize,
 			.Format = desktopTextureDesc.Format,
@@ -148,29 +172,14 @@ public:
 			.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE,
 			.MiscFlags = 0,
 		};
-		ComPtr<ID3D11Texture2D> finalTexture;
-		ASSERT(d3d11Device->CreateTexture2D(&textureDesc, NULL, &finalTexture)); 
-		
-		ComPtr<IDXGIKeyedMutex> desktopMutex;
-		ASSERT(desktopTexture.As(&desktopMutex));
+		ComPtr<ID3D11Texture2D> stagingTexture;
+		ASSERT(d3d11Device->CreateTexture2D(&textureDesc, NULL, &stagingTexture));  
+		d3d11Context->CopyResource(stagingTexture.Get(), desktopTexture.Get());  
 
-		ASSERT(desktopMutex->AcquireSync(0, 30));
-		d3d11Context->CopyResource(finalTexture.Get(), desktopTexture.Get());
-		desktopMutex->ReleaseSync(0); 
-
-		ComPtr<IDXGISurface> finalTextureSurface;
-		ASSERT(finalTexture->QueryInterface<IDXGISurface>(&finalTextureSurface)); 
-
-		DXGI_MAPPED_RECT rawImage{0};
-		ASSERT(finalTextureSurface->Map(&rawImage, DXGI_MAP_READ)); 
-
-		std::ofstream debugOut("debug.bmp", std::ios::binary | std::ios::trunc);
-		debugOut << rawImage.pBits;
-
-		//return desktopImage;
+		return stagingTexture;
 	} 
 
-	void DrawFullscreenRect() const noexcept {
+	void DrawFullscreenRect() const {
 		const auto windowSize = renderingWindow.getSize();
 
 		//testing

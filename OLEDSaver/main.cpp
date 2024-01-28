@@ -2,6 +2,7 @@
 #include <Windows.h>
 #include <exception> 
 #include <codecvt>
+#include "MacroUtils.h"
 
 import Window;
 import ErrorHandling;
@@ -9,6 +10,8 @@ import D2D1Renderer;
 import StringUtils;
 
 int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In_ PSTR cmdLine, _In_ int cmdShow) {
+	ASSERT(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
+
 	Window* window = nullptr;
 	D2D1Renderer* renderer = nullptr; 
 	try {
@@ -47,6 +50,6 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 			ErrorPopUp(ConvertString(ex.what()));
 		}
 	}
-	if (window) delete window;
-	if (window) delete renderer;
+	delete window;
+	delete renderer;
 }
