@@ -60,6 +60,8 @@ export class D3D11Renderer
 	std::vector<VertexShader> vertexShaders;
 	std::vector<PixelShader> pixelShaders;
 
+	ComPtr<ID3D11Buffer> vertexBuffer;
+
 	// Select the best adapter based on the most dedicated video memory. (a little primitive)
 	void SelectBestAdapter() {
 		int i = 0;
@@ -193,7 +195,7 @@ private:
 					const auto& descriptors = vertexShaderInfo.inputDescriptors;
 
 					ComPtr<ID3D11InputLayout> inputLayout;
-					ASSERT(d3d11Device->CreateInputLayout(reinterpret_cast<const D3D11_INPUT_ELEMENT_DESC*>(&descriptors), descriptors.size(), buf, size, &inputLayout));
+					ASSERT(d3d11Device->CreateInputLayout(reinterpret_cast<const D3D11_INPUT_ELEMENT_DESC*>(&descriptors), static_cast<UINT>(descriptors.size()), buf, size, &inputLayout));
 					vertexShaders.push_back({std::move(vertexShaderInfo), std::move(shader), std::move(inputLayout)});
 					break;
 				}
@@ -240,7 +242,21 @@ public:
 			{-0.5f, -0.5f, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
 		};
 
+		D3D11_BUFFER_DESC vertBufferDesc{
+			.ByteWidth = sizeof(Vertex) * std::size(vertices),
+			.Usage = D3D11_USAGE_DYNAMIC,
+			.BindFlags = D3D11_BIND_VERTEX_BUFFER,
+			.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
+			.StructureByteStride = 0,
+		};
 
+		ASSERT(d3d11Device->CreateBuffer(&vertBufferDesc, NULL, &vertexBuffer));
+
+		D3D11_MAPPED_SUBRESOURCE subresource;
+		ASSERT(d3d11Context->Map(vertexBuffer.Get(), NULL, D3D11_MAP_WRITE_DISCARD, NULL, &subresource));
+		memcpy(subresource.pData, vertices, sizeof(vertices));
+		d3d11Context->Unmap(vertexBuffer.Get(), NULL);
+		//TODO
 	}
 
 	void DrawFullscreenRect() const {

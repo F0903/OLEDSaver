@@ -9,7 +9,7 @@ template<auto length = 256>
 std::string ConvertWString(const std::wstring& str) {
 	char buf[length]{};
 	if (str.length() >= length) throw std::exception("convertWString input too large!");
-	const auto count = WideCharToMultiByte(CP_UTF8, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR, str.c_str(), str.length(), buf, sizeof(buf) * sizeof(char), NULL, NULL);
+	const auto count = WideCharToMultiByte(CP_UTF8, WC_NO_BEST_FIT_CHARS | WC_COMPOSITECHECK | WC_DEFAULTCHAR, str.c_str(), static_cast<int>(str.length()), buf, sizeof(buf) * sizeof(char), NULL, NULL);
 	auto newStr = std::string(buf, count); 
 	return newStr;
 }
