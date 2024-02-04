@@ -66,7 +66,9 @@ export class D3D11Renderer
 	struct CurrentlyDrawingInfo
 	{
 		unsigned int vertexCount;
-		unsigned int startVertexLocation;
+		unsigned int vertexStart;
+		unsigned int indexCount;
+		unsigned int indexStart;
 	} currentlyDrawingInfo; 
 
 	// Select the best adapter based on the most dedicated video memory. (a little primitive)
@@ -288,9 +290,10 @@ public:
 
 	void CreateFullscreenRect() NOEXCEPT_RELEASE {
 		constexpr Vertex vertices[] = {
-			{1.0f, 0.0f, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
-			{1.0f, -1.0f, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
-			{-1.0f, -1.0f, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
+			{-1.0f, 1.0f, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
+			{1.0f, 1.0f, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
+			{1.0f, -1.0f, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
+			{-1.0f, -1.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f}},
 		};
 
 		D3D11_BUFFER_DESC vertBufferDesc{
@@ -312,9 +315,31 @@ public:
 		UINT offsets[] = {0};
 		d3d11Context->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), strides, offsets);
 		d3d11Context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+		ComPtr<ID3D11Buffer> indexBuffer;
+		unsigned int indices[] = {0, 1, 2, 2, 3, 0};
+
+		D3D11_BUFFER_DESC bufferDesc {
+			.ByteWidth = ARRAYSIZE(indices) * sizeof(unsigned int),
+			.Usage = D3D11_USAGE_DEFAULT,
+			.BindFlags = D3D11_BIND_INDEX_BUFFER,
+			.CPUAccessFlags = NULL,
+			.MiscFlags = NULL,
+		};
+
+		D3D11_SUBRESOURCE_DATA initData{
+			.pSysMem = indices,
+			.SysMemPitch = 0,
+			.SysMemSlicePitch = 0,
+		};
+
+		ASSERT(d3d11Device->CreateBuffer(&bufferDesc, &initData, &indexBuffer));
+		d3d11Context->IASetIndexBuffer(indexBuffer.Get(), DXGI_FORMAT_R32_UINT, 0);
 		currentlyDrawingInfo = {
 			.vertexCount = static_cast<UINT>(std::size(vertices)),
-			.startVertexLocation = 0
+			.vertexStart = 0,
+			.indexCount = static_cast<UINT>(std::size(indices)),
+			.indexStart = 0,
 		};
 	}
 
@@ -322,7 +347,7 @@ public:
 		static constexpr const FLOAT backbufferColor[4] = {0.0f, 0.0f, 0.0f, 1.0f}; 
 		d3d11Context->OMSetRenderTargets(1, renderTarget.GetAddressOf(), NULL);
 		d3d11Context->ClearRenderTargetView(renderTarget.Get(), backbufferColor);
-		d3d11Context->Draw(currentlyDrawingInfo.vertexCount, currentlyDrawingInfo.startVertexLocation);
+		d3d11Context->DrawIndexed(currentlyDrawingInfo.indexCount, currentlyDrawingInfo.indexStart,currentlyDrawingInfo.vertexStart);
 		ASSERT(swapchain->Present(1, NULL));
 	}
 };
