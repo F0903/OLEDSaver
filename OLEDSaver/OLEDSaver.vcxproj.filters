@@ -41,5 +41,15 @@
     <ClInclude Include="MacroUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
+    <ClInclude Include="shaders\out\PixelShader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+    <ClInclude Include="shaders\out\VertexShader.h">
+      <Filter>Header Files</Filter>
+    </ClInclude>
+  </ItemGroup>
+  <ItemGroup>
+    <FxCompile Include="shaders\PixelShader.hlsl" />
+    <FxCompile Include="shaders\VertexShader.hlsl" />
   </ItemGroup>
 </Project>

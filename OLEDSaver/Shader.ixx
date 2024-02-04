@@ -6,45 +6,68 @@ module;
 #include <wrl.h>
 export module Shader;
 
-using namespace Microsoft::WRL;
+// using namespace aliasing will break intellisense on module import
 
-export struct ShaderInfo
+export struct ShaderCode
 {
-	enum class ShaderType
-	{
-		Vertex,
-		Pixel,
-	} const type;
-	const std::string name;
+	const void* data;
+	const unsigned int dataLength;
+	const bool heapAllocated;
+
+	ShaderCode(ShaderCode&&) = default;
+	ShaderCode(const ShaderCode&) = default;
+
+	template<class DataT, auto DataLength>
+	ShaderCode(DataT(&data)[DataLength], const bool heapAllocated = false) :
+		data(data),
+		dataLength(DataLength),
+		heapAllocated(heapAllocated) {
+	}
+
+	ShaderCode(const void* data, const unsigned int dataLength, const bool heapAllocated = true) :
+		data(data),
+		dataLength(dataLength),
+		heapAllocated(heapAllocated) {
+	}
+
+	~ShaderCode() {
+		if (heapAllocated) {
+			delete data;
+		}
+	}
 };
 
-export struct VertexShaderInfo : public ShaderInfo
+export
+template<class T> requires std::is_base_of_v<ID3D11DeviceChild, T>
+struct Shader
 {
-	using ShaderPixelFormat = DXGI_FORMAT;
-	using ShaderInputClassification = D3D11_INPUT_CLASSIFICATION;
-
-	struct ShaderInputElementDescriptor
-	{
-		const char* semanticName;
-		unsigned int semanticIndex;
-		ShaderPixelFormat format;
-		unsigned int inputSlot;
-		unsigned int alignedByteOffset;
-		ShaderInputClassification inputSlotClass;
-		unsigned int instanceDataStepRate;
-	};
-	const std::vector<ShaderInputElementDescriptor> inputDescriptors;
+	const Microsoft::WRL::ComPtr<T> shader;
+	const ShaderCode code;
 };
 
-export struct PixelShader
+export
+enum class ShaderType
 {
-	ShaderInfo info;
-	ComPtr<ID3D11PixelShader> pixelShader;
+	Vertex,
+	Pixel,
 };
 
-export struct VertexShader
+export
+enum class ShaderLoadType
 {
-	VertexShaderInfo info;
-	ComPtr<ID3D11VertexShader> vertexShader;
-	ComPtr<ID3D11InputLayout> inputLayout;
+	File,
+	RawCode
+};
+
+export struct ShaderLoadInfo
+{
+	const ShaderLoadType loadType;
+	const ShaderType type;
+	const ShaderCode code;
+
+	ShaderLoadInfo(const ShaderLoadType loadType, const ShaderType type, const ShaderCode code) :
+		loadType(loadType),
+		type(type),
+		code(code) {
+	}
 };

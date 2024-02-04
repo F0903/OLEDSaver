@@ -12,8 +12,7 @@ module;
 export module D3D11Renderer;
 
 using namespace Microsoft::WRL;
-using namespace D2D1; 
-using namespace concurrency;
+using namespace D2D1;
 
 import ErrorHandling;
 import Window;
@@ -22,7 +21,8 @@ import Shader;
 struct Vertex
 {
 	float x, y, z;
-	struct Color {
+	struct Color
+	{
 		float r, g, b, a;
 	} color;
 };
@@ -47,20 +47,27 @@ export class D3D11Renderer
 
 	ComPtr<ID3D11Device> d3d11Device;
 	ComPtr<ID3D11DeviceContext> d3d11Context;
-
-	ComPtr<IDXGIDevice2> dxgiDevice;
+	 
 	ComPtr<IDXGIAdapter2> dxgiAdapter;
 	ComPtr<IDXGIFactory2> dxgiFactory;
-	ComPtr<IDXGISurface> dxgiBackBuffer;
 	ComPtr<IDXGISwapChain1> swapchain;
+	ComPtr<ID3D11RenderTargetView> renderTarget;
 
 	Window& renderingWindow;
+	Window::Size currentWindowSize;
 
-	std::vector<task<void>> shadersLoading;
-	std::vector<VertexShader> vertexShaders;
-	std::vector<PixelShader> pixelShaders;
+	std::vector<concurrency::task<void>> shadersLoading;
+	std::vector<Shader<ID3D11VertexShader>> vertexShaders;
+	std::vector<Shader<ID3D11PixelShader>> pixelShaders;
+	const Shader<ID3D11VertexShader>* activeVertexShader = nullptr;
+	const Shader<ID3D11PixelShader>* activePixelShader = nullptr;
 
 	ComPtr<ID3D11Buffer> vertexBuffer;
+	struct CurrentlyDrawingInfo
+	{
+		unsigned int vertexCount;
+		unsigned int startVertexLocation;
+	} currentlyDrawingInfo; 
 
 	// Select the best adapter based on the most dedicated video memory. (a little primitive)
 	void SelectBestAdapter() {
@@ -89,11 +96,7 @@ export class D3D11Renderer
 		ASSERT(bestAdapter->QueryInterface<IDXGIAdapter2>(&dxgiAdapter));
 	}
 
-public:
-	D3D11Renderer(Window& window) : renderingWindow(window) {
-		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
-		SelectBestAdapter();
-
+	void InitDevice() NOEXCEPT_RELEASE {
 		UINT deviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
 #if defined(DEBUG) || defined(_DEBUG)
 		deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
@@ -104,12 +107,10 @@ public:
 		if (d3d11Device->GetFeatureLevel() < APP_MIN_FEATURE_LEVEL) {
 			ErrorPopUp(L"Device feature level below app minimum!");
 			return;
-		}
+		} 
+	}
 
-		ASSERT(d3d11Device.As(&dxgiDevice));
-		ASSERT(dxgiDevice->GetParent(__uuidof(IDXGIAdapter2), &dxgiAdapter));
-		ASSERT(dxgiAdapter->GetParent(__uuidof(IDXGIFactory2), &dxgiFactory));
-
+	void InitFullscreenSwapchain() NOEXCEPT_RELEASE {
 		DXGI_SWAP_CHAIN_DESC1 swapchainDesc{0};
 		swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
 		swapchainDesc.BufferCount = 2;
@@ -118,17 +119,126 @@ public:
 		swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
 		swapchainDesc.Format = DEFAULT_DXGI_FORMAT;
 		swapchainDesc.Stereo = FALSE;
-		swapchainDesc.Width = 0;
-		swapchainDesc.Height = 0;
+		swapchainDesc.Width = currentWindowSize.width;
+		swapchainDesc.Height = currentWindowSize.height;
 		swapchainDesc.SampleDesc.Count = 1;
 		swapchainDesc.SampleDesc.Quality = 0;
-		swapchainDesc.Flags = 0;
+		swapchainDesc.Flags = NULL;
 
-		ASSERT(dxgiFactory->CreateSwapChainForHwnd(d3d11Device.Get(), window.getHandle(), &swapchainDesc, NULL, NULL, &swapchain));
+		DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreenDesc{
+			.RefreshRate = {.Numerator = GetDisplayRefreshHz(), .Denominator = 1},
+			.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
+			.Scaling = DXGI_MODE_SCALING_UNSPECIFIED,
+			.Windowed = DEBUG_VALUE(TRUE, FALSE),
+		};
+		  
+		ASSERT(dxgiFactory->CreateSwapChainForHwnd(d3d11Device.Get(), renderingWindow.GetHandle(), &swapchainDesc, &fullscreenDesc, NULL, &swapchain));
+
+		ComPtr<ID3D11Texture2D> backbufferTexture;
+		ASSERT(swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), &backbufferTexture));
+		ASSERT(d3d11Device->CreateRenderTargetView(backbufferTexture.Get(), NULL, &renderTarget)); 
+		d3d11Context->OMSetRenderTargets(1, renderTarget.GetAddressOf(), NULL);
+
+		D3D11_VIEWPORT viewport{
+			.TopLeftX = 0,
+			.TopLeftY = 0,
+			.Width = static_cast<float>(currentWindowSize.width),
+			.Height = static_cast<float>(currentWindowSize.height)
+		};
+		d3d11Context->RSSetViewports(1, &viewport);
+	} 
+
+public:
+	D3D11Renderer(Window& window) : renderingWindow(window) {
+		currentWindowSize = window.GetSize();
+		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
+		SelectBestAdapter();
+		InitDevice();
+		InitFullscreenSwapchain();
 	}
 
 private:
-	ComPtr<ID3D11Texture2D> GrabScreenContent(UINT outputNum, UINT timeout = 100) const {
+	void SetInputLayout(const Shader<ID3D11VertexShader>& vertexShader) NOEXCEPT_RELEASE {
+		D3D11_INPUT_ELEMENT_DESC vertexProps[] = {
+			{"POSITION", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0},
+			{"COLOR", 0, DXGI_FORMAT_R32G32B32A32_FLOAT, 0, sizeof(float) * 3, D3D11_INPUT_PER_VERTEX_DATA, 0}
+		}; 
+
+		ComPtr<ID3D11InputLayout> inputLayout;
+		ASSERT(d3d11Device->CreateInputLayout(vertexProps, static_cast<UINT>(std::size(vertexProps)), vertexShader.code.data, vertexShader.code.dataLength, &inputLayout));
+		d3d11Context->IASetInputLayout(inputLayout.Get()); 
+	}
+
+	void LoadShaderAsync(const ShaderLoadInfo& info) NOEXCEPT_RELEASE {
+		auto shaderTask = concurrency::create_task([this, &info]() {
+			const void* data = info.code.data;
+			const auto size = info.code.dataLength;
+			const auto isFile = info.loadType == ShaderLoadType::File;
+			if (isFile) {
+				std::ifstream shaderFile(reinterpret_cast<const char*>(info.code.data), std::ios::binary);
+				shaderFile.seekg(0, std::ios::end);
+				const auto size = shaderFile.gcount();
+				shaderFile.seekg(0, std::ios::beg);
+				auto buf = new char[size]; // Do not delete, this will be handled by shader objects.
+				shaderFile.read(buf, size);
+				data = buf;
+			}
+
+			switch (info.type) {
+				case ShaderType::Vertex:
+				{
+					ComPtr<ID3D11VertexShader> shader;
+					ASSERT(d3d11Device->CreateVertexShader(data, size, nullptr, &shader));
+					vertexShaders.push_back({std::move(shader), std::move(info.code)});
+					break;
+				}
+				case ShaderType::Pixel:
+				{
+					ComPtr<ID3D11PixelShader> shader;
+					ASSERT(d3d11Device->CreatePixelShader(data, size, nullptr, &shader));
+					pixelShaders.push_back({std::move(shader), std::move(info.code)});
+					break;
+				}
+			}
+
+			// If the loadType is RawCode then the data will be deleted in its destructor.
+			if (isFile) {
+				delete data;
+			}
+		});
+		shadersLoading.push_back(std::move(shaderTask));
+	}
+
+	inline void EnsureShadersLoaded() const noexcept {
+		auto waitAllTask = concurrency::when_all(shadersLoading.begin(), shadersLoading.end());
+		waitAllTask.wait();
+	}
+
+public:
+	template<auto N>
+	inline void LoadShadersAsync(ShaderLoadInfo(&shaders)[N]) noexcept {
+		for (size_t i = 0; i < N; i++) {
+			const auto& shader = shaders[i];
+			LoadShaderAsync(shader);
+		}
+	}
+
+	inline void SetActiveLoadedVertexShader(size_t index) noexcept {
+		EnsureShadersLoaded();
+		const auto& shader = vertexShaders[index];
+		d3d11Context->VSSetShader(shader.shader.Get(), NULL, NULL);
+		SetInputLayout(shader);
+		activeVertexShader = &shader;
+	}
+
+	inline void SetActiveLoadedPixelShader(size_t index) noexcept {
+		EnsureShadersLoaded();
+		const auto& shader = pixelShaders[index];
+		d3d11Context->PSSetShader(shader.shader.Get(), NULL, NULL);
+		activePixelShader = &shader;
+	}
+
+	ComPtr<ID3D11Texture2D> GrabScreenContent(UINT outputNum, UINT timeout = 100) const NOEXCEPT_RELEASE {
 		ComPtr<IDXGIOutput> output;
 		ASSERT(dxgiAdapter->EnumOutputs(outputNum, &output));
 
@@ -139,7 +249,7 @@ private:
 		DXGI_FORMAT supportedFormats[] = {
 			DEFAULT_DXGI_FORMAT
 		};
-		ASSERT(outputV5->DuplicateOutput1(d3d11Device.Get(), NULL, sizeof(supportedFormats) / sizeof(supportedFormats[0]), supportedFormats, &duplication));
+		ASSERT(outputV5->DuplicateOutput1(d3d11Device.Get(), NULL, ARRAYSIZE(supportedFormats), supportedFormats, &duplication));
 
 		ComPtr<IDXGIResource> desktopResource;
 		DXGI_OUTDUPL_FRAME_INFO duplFrameInfo{0};
@@ -176,74 +286,15 @@ private:
 		return stagingTexture;
 	}
 
-	void LoadShaderAsync(const ShaderInfo& info) {
-		auto shaderTask = concurrency::create_task([this, info]() {
-			std::ifstream shaderFile(info.name, std::ios::binary);
-			shaderFile.seekg(0, std::ios::end);
-			const auto size = shaderFile.gcount();
-			shaderFile.seekg(0, std::ios::beg);
-
-			auto buf = new char[size];
-			shaderFile.read(buf, size);
-
-			switch (info.type) {
-				case ShaderInfo::ShaderType::Vertex:
-				{
-					const auto vertexShaderInfo = static_cast<VertexShaderInfo>(info);
-					ComPtr<ID3D11VertexShader> shader;
-					ASSERT(d3d11Device->CreateVertexShader(buf, size, nullptr, &shader));
-					const auto& descriptors = vertexShaderInfo.inputDescriptors;
-
-					ComPtr<ID3D11InputLayout> inputLayout;
-					ASSERT(d3d11Device->CreateInputLayout(reinterpret_cast<const D3D11_INPUT_ELEMENT_DESC*>(&descriptors), static_cast<UINT>(descriptors.size()), buf, size, &inputLayout));
-					vertexShaders.push_back({std::move(vertexShaderInfo), std::move(shader), std::move(inputLayout)});
-					break;
-				}
-				case ShaderInfo::ShaderType::Pixel:
-				{
-					ComPtr<ID3D11PixelShader> shader;
-					ASSERT(d3d11Device->CreatePixelShader(buf, size, nullptr, &shader));
-					pixelShaders.push_back({std::move(info), std::move(shader)});
-					break;
-				}
-			}
-
-			delete[] buf;
-		});
-		shadersLoading.push_back(std::move(shaderTask));
-	}
-
-	inline void EnsureShadersLoaded() const { 
-	}
-
-public:
-	template<auto n>
-	inline void LoadShadersAsync(ShaderInfo shaders[n]) {
-		for (size_t i = 0; i < n; i++) {
-			const auto& shader = shaders[i];
-			LoadShaderAsync(shader);
-		}
-	}
-
-	inline void SetActiveLoadedVertexShader(size_t index) const noexcept {
-		const auto& shader = vertexShaders[index];
-		d3d11Context->VSSetShader(shader.vertexShader.Get(), NULL, NULL);
-	}
-
-	inline void SetActiveLoadedPixelShader(size_t index) const noexcept {
-		const auto& shader = pixelShaders[index];
-		d3d11Context->PSSetShader(shader.pixelShader.Get(), NULL, NULL);
-	}
-
-	void CreateFullscreenRect() {
+	void CreateFullscreenRect() NOEXCEPT_RELEASE {
 		constexpr Vertex vertices[] = {
-			{0.0f, 0.5f, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
-			{0.5f, -0.5f, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
-			{-0.5f, -0.5f, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
+			{1.0f, 0.0f, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
+			{1.0f, -1.0f, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
+			{-1.0f, -1.0f, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
 		};
 
 		D3D11_BUFFER_DESC vertBufferDesc{
-			.ByteWidth = sizeof(Vertex) * std::size(vertices),
+			.ByteWidth = static_cast<UINT>(sizeof(Vertex) * std::size(vertices)),
 			.Usage = D3D11_USAGE_DYNAMIC,
 			.BindFlags = D3D11_BIND_VERTEX_BUFFER,
 			.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
@@ -256,14 +307,22 @@ public:
 		ASSERT(d3d11Context->Map(vertexBuffer.Get(), NULL, D3D11_MAP_WRITE_DISCARD, NULL, &subresource));
 		memcpy(subresource.pData, vertices, sizeof(vertices));
 		d3d11Context->Unmap(vertexBuffer.Get(), NULL);
-		//TODO
+
+		UINT strides[] = {sizeof(Vertex)};
+		UINT offsets[] = {0};
+		d3d11Context->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), strides, offsets);
+		d3d11Context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+		currentlyDrawingInfo = {
+			.vertexCount = static_cast<UINT>(std::size(vertices)),
+			.startVertexLocation = 0
+		};
 	}
 
-	void DrawFullscreenRect() const {
-		const auto windowSize = renderingWindow.getSize();
-
-
-
-		ASSERT(swapchain->Present(1, 0));
+	void Draw() NOEXCEPT_RELEASE { 
+		static constexpr const FLOAT backbufferColor[4] = {0.0f, 0.0f, 0.0f, 1.0f}; 
+		d3d11Context->OMSetRenderTargets(1, renderTarget.GetAddressOf(), NULL);
+		d3d11Context->ClearRenderTargetView(renderTarget.Get(), backbufferColor);
+		d3d11Context->Draw(currentlyDrawingInfo.vertexCount, currentlyDrawingInfo.startVertexLocation);
+		ASSERT(swapchain->Present(1, NULL));
 	}
 };

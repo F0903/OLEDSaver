@@ -4,10 +4,19 @@ module;
 #include <Windows.h>  
 #include <exception>
 #include <type_traits>
-
+#include "MacroUtils.h"
 export module Window;
 
 import Optional; 
+
+export const unsigned int GetDisplayRefreshHz() {
+	DEVMODE deviceMode{0};
+	deviceMode.dmSize = sizeof(DEVMODE);
+	if (!EnumDisplaySettings(NULL, ENUM_CURRENT_SETTINGS, &deviceMode)) {
+		throw std::exception("Could not get current display configuration!");
+	}
+	return deviceMode.dmDisplayFrequency;
+}
 
 export class Window
 {
@@ -16,6 +25,12 @@ public:
 	{
 		Normal, //TODO
 		Fullscreen
+	};
+
+	struct Size
+	{
+		int width;
+		int height;
 	};
 
 private:
@@ -28,11 +43,7 @@ private:
 	HWND windowHandle;
 	bool closed = false;
 
-	struct Size
-	{
-		int width;
-		int height;
-	} currentSize;
+	Size currentSize;
 
 public:
 	Window(HINSTANCE hInstance, const std::wstring& title, Style style) : hInstance(hInstance), title(title), style(style) {
@@ -41,13 +52,13 @@ public:
 				//TODO
 				break;
 			case Window::Style::Fullscreen:
-				createFullscreenWindow();
+				CreateFullscreenWindow();
 				break;
 		}
 	}
 
 	~Window() {
-		close();
+		Close();
 	}
 
 private:
@@ -56,7 +67,7 @@ private:
 			case WM_CLOSE:
 			{
 				auto window = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
-				window->close();
+				window->Close();
 				break;
 			}
 			case WM_DESTROY:
@@ -68,7 +79,7 @@ private:
 		return DefWindowProc(hwnd, msg, wParam, lParam);
 	}
 
-	const std::wstring registerWindowClass(const std::wstring& windowTitle) {
+	const std::wstring RegisterWindowClass(const std::wstring& windowTitle) {
 		std::wstring className = windowTitle;
 		className.append(L"Window");
 		if (classes.contains(className)) {
@@ -96,21 +107,13 @@ private:
 		return std::move(className);
 	}
 
-	void createFullscreenWindow() {
-		const auto className = registerWindowClass(title);
+	void CreateFullscreenWindow() {
+		const auto className = RegisterWindowClass(title);
 
 		const auto screenX = GetSystemMetrics(SM_CXSCREEN);
-		const auto screenY = GetSystemMetrics(SM_CYSCREEN);
+		const auto screenY = GetSystemMetrics(SM_CYSCREEN); 
 
-		//TODO: Re-add WS_EX_TOPMOST to flags when deploying
-		constexpr auto flags =
-#ifdef _DEBUG 
-			0;
-#elif
-			WS_EX_TOPMOST;
-#endif
-
-		windowHandle = CreateWindowEx(flags, className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
+		windowHandle = CreateWindowEx(DEBUG_VALUE(0, WS_EX_TOPMOST), className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 		if (!windowHandle) {
 			throw std::exception("Unable to create window");
@@ -123,7 +126,7 @@ private:
 	}
 
 public:
-	void update() const {
+	void Update() const {
 		if (closed) {
 			throw std::exception("Window is closed!");
 		}
@@ -133,23 +136,23 @@ public:
 		}
 	}
 
-	void show() const {
+	void Show() const {
 		ShowWindow(windowHandle, SW_SHOW);
 	}
 
-	inline const bool isClosed() const noexcept {
+	inline const bool IsClosed() const noexcept {
 		return closed;
 	}
 
-	inline HWND getHandle() const noexcept {
+	inline HWND GetHandle() const noexcept {
 		return windowHandle;
 	}
 
-	inline Size getSize() const noexcept {
+	inline Size GetSize() const noexcept {
 		return currentSize;
 	}
 
-	void close() {
+	void Close() {
 		if (closed) return;
 		DestroyWindow(windowHandle);
 		UnregisterClass(windowClass.c_str(), hInstance);
