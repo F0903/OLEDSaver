@@ -23,11 +23,10 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 		window->Show();
 
 		renderer = new D3D11Renderer(*window);
-		ShaderLoadInfo shaders[] = {
-			{ShaderLoadType::RawCode, ShaderType::Vertex, {VertexShader_code}},
-			{ShaderLoadType::RawCode, ShaderType::Pixel, {PixelShader_code}}
-		};
-		renderer->LoadShadersAsync(shaders);
+		renderer->LoadShadersAsync({
+			{{VertexShader_code}, ShaderType::Vertex},
+			{{PixelShader_code}, ShaderType::Pixel}
+		});
 		renderer->SetActiveLoadedVertexShader(0);
 		renderer->SetActiveLoadedPixelShader(0);
 
