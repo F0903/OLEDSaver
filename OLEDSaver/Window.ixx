@@ -71,12 +71,13 @@ private:
 				break;
 			}
 			case WM_DESTROY:
+			{
 				PostQuitMessage(0);
 				break;
+			}
 			default:
-				break;
+				return DefWindowProc(hwnd, msg, wParam, lParam);
 		}
-		return DefWindowProc(hwnd, msg, wParam, lParam);
 	}
 
 	const std::wstring RegisterWindowClass(const std::wstring& windowTitle) {
@@ -111,7 +112,7 @@ private:
 		const auto className = RegisterWindowClass(title);
 
 		const auto screenX = GetSystemMetrics(SM_CXSCREEN);
-		const auto screenY = GetSystemMetrics(SM_CYSCREEN); 
+		const auto screenY = GetSystemMetrics(SM_CYSCREEN);
 
 		windowHandle = CreateWindowEx(DEBUG_VALUE(0, WS_EX_TOPMOST), className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
@@ -150,6 +151,10 @@ public:
 
 	inline Size GetSize() const noexcept {
 		return currentSize;
+	}
+
+	inline void SetCursorVisibility(bool visible) const noexcept {
+		ShowCursor(visible);
 	}
 
 	void Close() {

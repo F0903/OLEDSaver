@@ -35,14 +35,14 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 		bool gotMsg = false;
 
 		renderer->CreateFullscreenRect();
+		window->SetCursorVisibility(false);
 		while (message.message != WM_QUIT) {
 			gotMsg = (PeekMessage(&message, NULL, 0, 0, PM_REMOVE) != 0);
 			if (gotMsg) {
 				TranslateMessage(&message);
 				DispatchMessage(&message);
-				continue;
 			} 
-			renderer->Draw(); 
+			renderer->Draw();
 		}
 	}
 	catch (std::exception& ex) {
