@@ -102,7 +102,7 @@ private:
 
 		classes.insert(className);
 
-		return std::move(className);
+		return className;
 	}
 
 	void CreateFullscreenWindow() {
@@ -111,7 +111,8 @@ private:
 		const auto screenX = GetSystemMetrics(SM_CXSCREEN);
 		const auto screenY = GetSystemMetrics(SM_CYSCREEN);
 
-		windowHandle = CreateWindowEx(DEBUG_VALUE(0, WS_EX_TOPMOST), className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
+		constexpr auto windowExFlags = WS_EX_NOREDIRECTIONBITMAP;
+		windowHandle = CreateWindowEx(DEBUG_VALUE(windowExFlags, windowExFlags | WS_EX_TOPMOST), className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 		if (!windowHandle) {
 			throw std::exception("Unable to create window");

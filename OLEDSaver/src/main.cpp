@@ -34,11 +34,11 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 		auto& vertexShader = renderer->GetLoadedVertexShader(0);
 		auto& pixelShader = renderer->GetLoadedPixelShader(0);
 		vertexShader.SetActive();
-		pixelShader.SetActive();
 		
 		renderer->CreateFullscreenRect();
 		window->SetCursorVisibility(false);
 
+		pixelShader.SetActive();
 		renderer->Initialize();
 
 		MSG message{0};

@@ -11,6 +11,7 @@ module;
 #include <string>  
 #include <mutex>
 #include <span>
+#include <dcomp.h>
 #include "MacroUtils.h"
 export module D3D11Renderer;
 
@@ -35,14 +36,12 @@ export class D3D11Renderer
 	static constexpr auto VRR = true;
 
 	static constexpr D3D_FEATURE_LEVEL DIRECTX_FEATURE_LEVELS[] = {
-		D3D_FEATURE_LEVEL_10_0,
-		D3D_FEATURE_LEVEL_10_1,
-		D3D_FEATURE_LEVEL_11_0,
 		D3D_FEATURE_LEVEL_11_1,
 	};
 
 	D3D_FEATURE_LEVEL selectedFeatureLevel;
 
+	ComPtr<IDXGIDevice1> dxgiDevice;
 	ComPtr<ID3D11Device> d3d11Device;
 	ComPtr<ID3D11DeviceContext> d3d11Context;
 
@@ -50,6 +49,9 @@ export class D3D11Renderer
 	ComPtr<IDXGIFactory2> dxgiFactory;
 	ComPtr<IDXGISwapChain1> swapchain;
 	ComPtr<ID3D11RenderTargetView> renderTarget;
+
+	ComPtr<IDCompositionDevice> compDevice;
+	ComPtr<IDCompositionTarget> compTarget;
 
 	Window& renderingWindow;
 	Window::Size currentWindowSize;
@@ -99,10 +101,7 @@ export class D3D11Renderer
 	}
 
 	void InitDevice() NOEXCEPT_RELEASE {
-		UINT deviceFlags = D3D11_CREATE_DEVICE_BGRA_SUPPORT;
-#if defined(DEBUG) || defined(_DEBUG)
-		deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
-#endif
+		constexpr UINT deviceFlags = DEBUG_VALUE(D3D11_CREATE_DEVICE_DEBUG | D3D11_CREATE_DEVICE_BGRA_SUPPORT, D3D11_CREATE_DEVICE_BGRA_SUPPORT);
 
 		ASSERT(D3D11CreateDevice(dxgiAdapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, 0, deviceFlags, DIRECTX_FEATURE_LEVELS, ARRAYSIZE(DIRECTX_FEATURE_LEVELS), D3D11_SDK_VERSION, &d3d11Device, &selectedFeatureLevel, &d3d11Context));
 
@@ -110,31 +109,27 @@ export class D3D11Renderer
 			ErrorPopUp(L"Device feature level below app minimum!");
 			return;
 		}
+
+		ASSERT(d3d11Device.As(&dxgiDevice));
 	}
 
 	void InitFullscreenSwapchain() NOEXCEPT_RELEASE {
-		DXGI_SWAP_CHAIN_DESC1 swapchainDesc{0};
-		swapchainDesc.AlphaMode = DXGI_ALPHA_MODE_UNSPECIFIED;
-		swapchainDesc.BufferCount = 2;
-		swapchainDesc.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT;
-		swapchainDesc.Scaling = DXGI_SCALING_NONE;
-		swapchainDesc.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL;
-		swapchainDesc.Format = DEFAULT_DXGI_FORMAT;
-		swapchainDesc.Stereo = FALSE;
-		swapchainDesc.Width = currentWindowSize.width;
-		swapchainDesc.Height = currentWindowSize.height;
-		swapchainDesc.SampleDesc.Count = 1;
-		swapchainDesc.SampleDesc.Quality = 0;
-		swapchainDesc.Flags = VRR ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
-
-		DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreenDesc{
-			.RefreshRate = {.Numerator = GetDisplayRefreshHz(), .Denominator = 1},
-			.ScanlineOrdering = DXGI_MODE_SCANLINE_ORDER_UNSPECIFIED,
-			.Scaling = DXGI_MODE_SCALING_UNSPECIFIED,
-			.Windowed = DEBUG_VALUE(TRUE, FALSE),
+		DXGI_SWAP_CHAIN_DESC1 swapchainDesc{
+			.Width = static_cast<UINT>(currentWindowSize.width),
+			.Height = static_cast<UINT>(currentWindowSize.height),
+			.Format = DEFAULT_DXGI_FORMAT,
+			.Stereo = FALSE,
+			.SampleDesc = {.Count = 1, .Quality = 0},
+			.BufferUsage = DXGI_USAGE_RENDER_TARGET_OUTPUT,
+			.BufferCount = 2,
+			.Scaling = DXGI_SCALING_STRETCH,
+			.SwapEffect = DXGI_SWAP_EFFECT_FLIP_SEQUENTIAL,
+			.AlphaMode = DXGI_ALPHA_MODE_PREMULTIPLIED,
+			.Flags = VRR ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0,
 		};
 
-		ASSERT(dxgiFactory->CreateSwapChainForHwnd(d3d11Device.Get(), renderingWindow.GetHandle(), &swapchainDesc, &fullscreenDesc, NULL, &swapchain));
+		ASSERT(dxgiFactory->CreateSwapChainForComposition(d3d11Device.Get(), &swapchainDesc, NULL, &swapchain));
+		ASSERT(dxgiDevice->SetMaximumFrameLatency(1));
 
 		ComPtr<ID3D11Texture2D> backbufferTexture;
 		ASSERT(swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), &backbufferTexture));
@@ -150,6 +145,16 @@ export class D3D11Renderer
 		d3d11Context->RSSetViewports(1, &viewport);
 	}
 
+	void InitDirectComposition() NOEXCEPT_RELEASE {
+		ASSERT(DCompositionCreateDevice(dxgiDevice.Get(), __uuidof(compDevice), &compDevice));
+		ASSERT(compDevice->CreateTargetForHwnd(renderingWindow.GetHandle(), TRUE, &compTarget));
+		ComPtr<IDCompositionVisual> compVisual;
+		ASSERT(compDevice->CreateVisual(&compVisual));
+		ASSERT(compVisual->SetContent(swapchain.Get()));
+		ASSERT(compTarget->SetRoot(compVisual.Get()));
+		ASSERT(compDevice->Commit());
+	}
+
 public:
 	D3D11Renderer(Window& window) : renderingWindow(window) {
 		currentWindowSize = window.GetSize();
@@ -158,6 +163,7 @@ public:
 		SelectBestAdapter();
 		InitDevice();
 		InitFullscreenSwapchain();
+		InitDirectComposition();
 	}
 
 private:
@@ -200,54 +206,6 @@ public:
 
 	inline PixelShader& GetLoadedPixelShader(size_t index) noexcept {
 		return pixelShaders[index];
-	}
-
-	ComPtr<ID3D11Texture2D> GrabScreenContent(UINT outputNum, UINT timeout = 100) const NOEXCEPT_RELEASE {
-		ComPtr<IDXGIOutput> output;
-		ASSERT(dxgiAdapter->EnumOutputs(outputNum, &output));
-
-		ComPtr<IDXGIOutput5> outputV5;
-		ASSERT(output->QueryInterface<IDXGIOutput5>(&outputV5));
-
-		ComPtr<IDXGIOutputDuplication> duplication;
-		DXGI_FORMAT supportedFormats[] = {
-			DEFAULT_DXGI_FORMAT
-		};
-		ASSERT(outputV5->DuplicateOutput1(d3d11Device.Get(), NULL, ARRAYSIZE(supportedFormats), supportedFormats, &duplication));
-
-		ComPtr<IDXGIResource> desktopResource;
-		DXGI_OUTDUPL_FRAME_INFO duplFrameInfo{0};
-		while (true) {
-			duplication->ReleaseFrame();
-			const auto result = duplication->AcquireNextFrame(timeout, &duplFrameInfo, &desktopResource);
-			if (result == S_OK) break;
-			ASSERT(result);
-		}
-
-		ComPtr<IDXGISurface> desktopImage;
-		ASSERT(desktopResource->QueryInterface<IDXGISurface>(&desktopImage));
-
-		ComPtr<ID3D11Texture2D> desktopTexture;
-		ASSERT(desktopImage->QueryInterface<ID3D11Texture2D>(&desktopTexture));
-
-		D3D11_TEXTURE2D_DESC desktopTextureDesc{0};
-		desktopTexture->GetDesc(&desktopTextureDesc);
-		D3D11_TEXTURE2D_DESC textureDesc{
-			.Width = desktopTextureDesc.Width,
-			.Height = desktopTextureDesc.Height,
-			.MipLevels = desktopTextureDesc.MipLevels,
-			.ArraySize = desktopTextureDesc.ArraySize,
-			.Format = desktopTextureDesc.Format,
-			.SampleDesc = desktopTextureDesc.SampleDesc,
-			.Usage = D3D11_USAGE_STAGING,
-			.CPUAccessFlags = D3D11_CPU_ACCESS_READ | D3D11_CPU_ACCESS_WRITE,
-			.MiscFlags = 0,
-		};
-		ComPtr<ID3D11Texture2D> stagingTexture;
-		ASSERT(d3d11Device->CreateTexture2D(&textureDesc, NULL, &stagingTexture));
-		d3d11Context->CopyResource(stagingTexture.Get(), desktopTexture.Get());
-
-		return stagingTexture;
 	}
 
 	void CreateFullscreenRect() NOEXCEPT_RELEASE {
