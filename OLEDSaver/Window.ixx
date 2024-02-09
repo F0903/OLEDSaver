@@ -66,8 +66,8 @@ private:
 		switch (msg) {
 			case WM_CLOSE:
 			{
-				auto window = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
-				window->Close();
+				auto me = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
+				me->Close();
 				break;
 			}
 			case WM_DESTROY:
@@ -75,9 +75,9 @@ private:
 				PostQuitMessage(0);
 				break;
 			}
-			default:
-				return DefWindowProc(hwnd, msg, wParam, lParam);
+			default: return DefWindowProc(hwnd, msg, wParam, lParam);
 		}
+		return NULL;
 	}
 
 	const std::wstring RegisterWindowClass(const std::wstring& windowTitle) {
@@ -88,18 +88,15 @@ private:
 		}
 
 		const auto icon = LoadIcon(hInstance, IDI_APPLICATION);
-		WNDCLASSEX windowClass{0};
-		windowClass.cbSize = sizeof(WNDCLASSEX);
-		windowClass.style = 0;
-		windowClass.lpfnWndProc = WndProc;
-		windowClass.hInstance = hInstance;
-		windowClass.hIcon = icon;
-		windowClass.hCursor = LoadCursor(hInstance, IDC_ARROW);
-		windowClass.lpszMenuName = NULL;
-		windowClass.lpszClassName = className.c_str();
-		windowClass.hIconSm = icon;
+		WNDCLASSEX windowClassDesc{0};
+		windowClassDesc.cbSize = sizeof(WNDCLASSEX);
+		windowClassDesc.lpfnWndProc = WndProc;
+		windowClassDesc.hInstance = hInstance;
+		windowClassDesc.hIcon = icon;
+		windowClassDesc.lpszClassName = className.c_str();
+		windowClassDesc.hIconSm = icon;
 
-		if (!RegisterClassEx(&windowClass)) {
+		if (!RegisterClassEx(&windowClassDesc)) {
 			throw std::exception("Could not register window class!");
 		}
 

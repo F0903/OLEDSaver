@@ -6,9 +6,11 @@ module;
 #include <wrl.h>
 #include <Windows.h>
 #include <fstream>
-#include <ppltasks.h>
+#include <chrono>
+#include <ppl.h>
 #include <string>  
 #include <mutex>
+#include <span>
 #include "MacroUtils.h"
 export module D3D11Renderer;
 
@@ -22,26 +24,19 @@ import Shader;
 struct Vertex
 {
 	float x, y, z;
-	struct Color
-	{
-		float r, g, b, a;
-	} color;
 };
 
 export class D3D11Renderer
 {
 	static constexpr auto DEFAULT_DXGI_FORMAT = DXGI_FORMAT_B8G8R8A8_UNORM;
-	static constexpr auto APP_MIN_FEATURE_LEVEL = D3D_FEATURE_LEVEL_9_1;
 	static constexpr auto DPI = 96;
+	static constexpr auto VRR = true;
 
-	static constexpr D3D_FEATURE_LEVEL featureLevels[] = {
-		D3D_FEATURE_LEVEL_11_1,
-		D3D_FEATURE_LEVEL_11_0,
-		D3D_FEATURE_LEVEL_10_1,
+	static constexpr D3D_FEATURE_LEVEL DIRECTX_FEATURE_LEVELS[] = {
 		D3D_FEATURE_LEVEL_10_0,
-		D3D_FEATURE_LEVEL_9_3,
-		D3D_FEATURE_LEVEL_9_2,
-		D3D_FEATURE_LEVEL_9_1,
+		D3D_FEATURE_LEVEL_10_1,
+		D3D_FEATURE_LEVEL_11_0,
+		D3D_FEATURE_LEVEL_11_1,
 	};
 
 	D3D_FEATURE_LEVEL selectedFeatureLevel;
@@ -57,16 +52,11 @@ export class D3D11Renderer
 	Window& renderingWindow;
 	Window::Size currentWindowSize;
 
-	std::vector<concurrency::task<void>> shadersLoading;
-
 	std::vector<VertexShader> vertexShaders;
 	std::mutex vertexShadersMutex;
 
 	std::vector<PixelShader> pixelShaders;
 	std::mutex pixelShadersMutex;
-
-	const VertexShader* activeVertexShader = nullptr;
-	const PixelShader* activePixelShader = nullptr;
 
 	ComPtr<ID3D11Buffer> vertexBuffer;
 	struct CurrentlyDrawingInfo
@@ -76,6 +66,8 @@ export class D3D11Renderer
 		unsigned int indexCount;
 		unsigned int indexStart;
 	} currentlyDrawingInfo;
+
+	std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
 
 	// Select the best adapter based on the most dedicated video memory. (a little primitive)
 	void SelectBestAdapter() {
@@ -110,9 +102,9 @@ export class D3D11Renderer
 		deviceFlags |= D3D11_CREATE_DEVICE_DEBUG;
 #endif
 
-		ASSERT(D3D11CreateDevice(dxgiAdapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, 0, deviceFlags, featureLevels, ARRAYSIZE(featureLevels), D3D11_SDK_VERSION, &d3d11Device, &selectedFeatureLevel, &d3d11Context));
+		ASSERT(D3D11CreateDevice(dxgiAdapter.Get(), D3D_DRIVER_TYPE_UNKNOWN, 0, deviceFlags, DIRECTX_FEATURE_LEVELS, ARRAYSIZE(DIRECTX_FEATURE_LEVELS), D3D11_SDK_VERSION, &d3d11Device, &selectedFeatureLevel, &d3d11Context));
 
-		if (d3d11Device->GetFeatureLevel() < APP_MIN_FEATURE_LEVEL) {
+		if (d3d11Device->GetFeatureLevel() < DIRECTX_FEATURE_LEVELS[0]) {
 			ErrorPopUp(L"Device feature level below app minimum!");
 			return;
 		}
@@ -131,7 +123,7 @@ export class D3D11Renderer
 		swapchainDesc.Height = currentWindowSize.height;
 		swapchainDesc.SampleDesc.Count = 1;
 		swapchainDesc.SampleDesc.Quality = 0;
-		swapchainDesc.Flags = NULL;
+		swapchainDesc.Flags = VRR ? DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING : 0;
 
 		DXGI_SWAP_CHAIN_FULLSCREEN_DESC fullscreenDesc{
 			.RefreshRate = {.Numerator = GetDisplayRefreshHz(), .Denominator = 1},
@@ -159,6 +151,7 @@ export class D3D11Renderer
 public:
 	D3D11Renderer(Window& window) : renderingWindow(window) {
 		currentWindowSize = window.GetSize();
+		startTime = std::chrono::high_resolution_clock::now();
 		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
 		SelectBestAdapter();
 		InitDevice();
@@ -166,57 +159,45 @@ public:
 	}
 
 private:
-	void LoadShaderAsync(const std::pair<const ShaderCode&, const ShaderType>& info) NOEXCEPT_RELEASE {
-		auto shaderTask = concurrency::create_task([this, &info]() {
-			const auto& [code, type] = info;
-			switch (type) {
-				case ShaderType::Vertex:
+	void LoadShader(const std::pair<const ShaderCode&, const ShaderType>& info) NOEXCEPT_RELEASE {
+		const auto& [code, type] = info;
+		switch (type) {
+			case ShaderType::Vertex:
+			{
+				auto shader = VertexShader(*d3d11Device.Get(), *d3d11Context.Get(), std::move(code));
 				{
-					auto shader = VertexShader(*d3d11Device.Get(), *d3d11Context.Get(), std::move(code));
-					const auto lock = std::lock_guard(vertexShadersMutex);
-					vertexShaders.push_back(shader);
-					break;
+					std::lock_guard lock(vertexShadersMutex);
+					vertexShaders.push_back(std::move(shader));
 				}
-				case ShaderType::Pixel:
-				{
-					auto shader = PixelShader(*d3d11Device.Get(), *d3d11Context.Get(), std::move(code));
-					const auto lock = std::lock_guard(pixelShadersMutex);
-					pixelShaders.push_back(shader);
-					break;
-				}
+				break;
 			}
-		});
-		shadersLoading.push_back(std::move(shaderTask));
-	}
-
-	inline void WaitForAllShadersLoaded() noexcept {
-		auto waitAllTask = concurrency::when_all(shadersLoading.begin(), shadersLoading.end());
-		waitAllTask.wait();
-		shadersLoading.clear();
-	}
-
-public:
-	template<auto N>
-	inline void LoadShadersAsync(const std::pair<const ShaderCode&, const ShaderType>(&shaders)[N]) noexcept {
-		for (size_t i = 0; i < N; i++) {
-			const auto& shader = shaders[i];
-			LoadShaderAsync(shader);
+			case ShaderType::Pixel:
+			{
+				auto shader = PixelShader(*d3d11Device.Get(), *d3d11Context.Get(), std::move(code));
+				{
+					std::lock_guard lock(pixelShadersMutex);
+					pixelShaders.push_back(std::move(shader));
+				}
+				break;
+			}
 		}
 	}
 
-	inline void SetActiveLoadedVertexShader(size_t index) noexcept {
-		WaitForAllShadersLoaded();
-		const auto& shader = vertexShaders[index];
-		shader.SetActive();
-		shader.SetInputLayout();
-		activeVertexShader = &shader;
+public:
+	inline void LoadShadersParallel(const std::vector<std::pair<const ShaderCode&, const ShaderType>>& shaders) NOEXCEPT_RELEASE {
+		// Can't get parallel_for_each to work, so using this.
+		concurrency::parallel_for(size_t(0), shaders.size(), [&](size_t i) {
+			auto& shaderInfo = shaders[i];
+			LoadShader(shaderInfo);
+		});
 	}
 
-	inline void SetActiveLoadedPixelShader(size_t index) noexcept {
-		WaitForAllShadersLoaded();
-		const auto& shader = pixelShaders[index];
-		shader.SetActive();
-		activePixelShader = &shader;
+	inline VertexShader& GetLoadedVertexShader(size_t index) noexcept {
+		return vertexShaders[index];
+	}
+
+	inline PixelShader& GetLoadedPixelShader(size_t index) noexcept {
+		return pixelShaders[index];
 	}
 
 	ComPtr<ID3D11Texture2D> GrabScreenContent(UINT outputNum, UINT timeout = 100) const NOEXCEPT_RELEASE {
@@ -269,10 +250,10 @@ public:
 
 	void CreateFullscreenRect() NOEXCEPT_RELEASE {
 		constexpr Vertex vertices[] = {
-			{-1.0f, 1.0f, 0.0f, {1.0f, 0.0f, 0.0f, 1.0f}},
-			{1.0f, 1.0f, 0.0f, {0.0f, 1.0f, 0.0f, 1.0f}},
-			{1.0f, -1.0f, 0.0f, {0.0f, 0.0f, 1.0f, 1.0f}},
-			{-1.0f, -1.0f, 0.0f, {1.0f, 1.0f, 1.0f, 1.0f}},
+			{-1.0f, 1.0f, 0.0f},
+			{1.0f, 1.0f, 0.0f},
+			{1.0f, -1.0f, 0.0f},
+			{-1.0f, -1.0f, 0.0f},
 		};
 
 		D3D11_BUFFER_DESC vertBufferDesc{
@@ -323,10 +304,20 @@ public:
 	}
 
 	void Draw() NOEXCEPT_RELEASE {
+		const auto timeFrameStart = std::chrono::high_resolution_clock::now();
+		const auto timeSinceStart = std::chrono::duration_cast<std::chrono::milliseconds>(timeFrameStart - startTime);
+		PixelShader::active->SetConstantBuffer({
+			static_cast<float>(timeSinceStart.count()) / 1000.0f,
+			{
+				static_cast<float>(currentWindowSize.width),
+				static_cast<float>(currentWindowSize.height)
+			}
+		});
+
 		static constexpr const FLOAT backbufferColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 		d3d11Context->OMSetRenderTargets(1, renderTarget.GetAddressOf(), NULL);
 		d3d11Context->ClearRenderTargetView(renderTarget.Get(), backbufferColor);
 		d3d11Context->DrawIndexed(currentlyDrawingInfo.indexCount, currentlyDrawingInfo.indexStart, currentlyDrawingInfo.vertexStart);
-		ASSERT(swapchain->Present(1, NULL));
+		ASSERT(swapchain->Present(VRR ? 0 : 1, VRR ? DXGI_PRESENT_ALLOW_TEARING : 0));
 	}
 };

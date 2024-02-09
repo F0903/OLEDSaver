@@ -26,8 +26,8 @@ export void ErrorPopUp(const std::wstring& msg) {
 	if (result == 0) {
 		auto wideErrorMsg = GetLastErrorMessage();
 		auto errorMsg = wideErrorMsg.HasValue() ? ConvertWString(wideErrorMsg.Unwrap()) : "No error specified.";
-		auto msg = std::string("Could not create error modal!\n");
-		msg.append(errorMsg);
-		throw std::exception(msg.c_str());
+		auto exMsg = std::string("Could not create error modal!\n");
+		exMsg.append(errorMsg);
+		throw std::exception(exMsg.c_str());
 	}
 } 
