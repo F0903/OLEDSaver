@@ -123,7 +123,6 @@ private:
 public:
 	void SetActive() NOEXCEPT_RELEASE override {
 		context.VSSetShader(shader.Get(), NULL, NULL);
-		SetInputLayout();
 		active = this;
 	}
 };
@@ -159,8 +158,8 @@ public:
 		ASSERT(device.CreatePixelShader(code.data, code.dataLength, nullptr, &shader));
 	}
 
-private:
-	void SetConstantBuffer(ConstantBuffer&& bufferData) NOEXCEPT_RELEASE {
+public:
+	void InitConstantBuffer(const ConstantBuffer& bufferData) NOEXCEPT_RELEASE {
 		D3D11_BUFFER_DESC bufferDesc{
 			.ByteWidth = sizeof(ConstantBuffer),
 			.Usage = D3D11_USAGE_DYNAMIC,
@@ -175,13 +174,18 @@ private:
 			.SysMemPitch = 0,
 			.SysMemSlicePitch = 0,
 		};
-		
+
 		ASSERT(device.CreateBuffer(&bufferDesc, &initData, &constantBuffer));
 		context.PSSetConstantBuffers(0, 1, constantBuffer.GetAddressOf());
-		//TODO: Map and set the constant buffer instead of creating a new one each time.
 	}
 
-public:
+	void SetConstantBuffer(const ConstantBuffer& bufferData) NOEXCEPT_RELEASE {
+		D3D11_MAPPED_SUBRESOURCE resourceMap{0};
+		ASSERT(context.Map(constantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &resourceMap));
+		memcpy(resourceMap.pData, &bufferData, sizeof(ConstantBuffer));
+		context.Unmap(constantBuffer.Get(), 0);
+	}
+
 	void SetActive() NOEXCEPT_RELEASE override {
 		context.PSSetShader(shader.Get(), NULL, NULL);
 		active = this;

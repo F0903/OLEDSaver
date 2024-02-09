@@ -39,6 +39,8 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 		renderer->CreateFullscreenRect();
 		window->SetCursorVisibility(false);
 
+		renderer->Initialize();
+
 		MSG message{0};
 		PeekMessage(&message, NULL, 0, 0, PM_NOREMOVE);
 		bool gotMsg = false;

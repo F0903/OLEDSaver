@@ -303,6 +303,17 @@ public:
 		};
 	}
 
+	void Initialize() NOEXCEPT_RELEASE {
+		VertexShader::active->SetInputLayout();
+		PixelShader::active->InitConstantBuffer({
+			0.0f,
+			{
+				static_cast<float>(currentWindowSize.width),
+				static_cast<float>(currentWindowSize.height)
+			}
+		});
+	}
+
 	void Draw() NOEXCEPT_RELEASE {
 		const auto timeFrameStart = std::chrono::high_resolution_clock::now();
 		const auto timeSinceStart = std::chrono::duration_cast<std::chrono::milliseconds>(timeFrameStart - startTime);
