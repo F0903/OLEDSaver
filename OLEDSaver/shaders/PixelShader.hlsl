@@ -6,6 +6,8 @@ cbuffer ConstantBuffer : register(b0)
     float2 resolution;
 }
 
+sampler2D screenshot;
+
 float4 main(V2P input) : SV_TARGET
 {
     float2 uv = input.position.xy / resolution.xy;

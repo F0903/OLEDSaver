@@ -3,8 +3,8 @@
 #include <exception>
 #include <iostream>
 #include "MacroUtils.h"
-#include "shaders/out/PixelShader.h"
-#include "shaders/out/VertexShader.h" 
+#include "../shaders/out/PixelShader.h"
+#include "../shaders/out/VertexShader.h" 
 
 import Window;
 import ErrorHandling; 

@@ -20,6 +20,8 @@ using namespace D2D1;
 import ErrorHandling;
 import Window;
 import Shader;
+import Shader.PixelShader;
+import Shader.VertexShader;
 
 struct Vertex
 {
