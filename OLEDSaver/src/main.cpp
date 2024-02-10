@@ -3,6 +3,8 @@
 #include <exception>
 #include <iostream>
 #include "MacroUtils.h"
+#include <chrono>
+#include <thread>
 #include "../shaders/out/PixelShader.h"
 #include "../shaders/out/VertexShader.h" 
 
@@ -39,7 +41,7 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 		window->SetCursorVisibility(false);
 
 		pixelShader.SetActive();
-		renderer->Initialize();
+		renderer->Initialize(); 
 
 		MSG message{0};
 		PeekMessage(&message, NULL, 0, 0, PM_NOREMOVE);

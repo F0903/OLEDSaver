@@ -101,6 +101,7 @@
     <ClCompile Include="src\Shaders\Shader.ixx" />
     <ClCompile Include="src\Shaders\VertexShader.ixx" />
     <ClCompile Include="src\StringUtils.ixx" />
+    <ClCompile Include="src\Time.ixx" />
     <ClCompile Include="src\Window.ixx" />
   </ItemGroup>
   <ItemGroup>

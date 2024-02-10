@@ -42,6 +42,9 @@
     <ClCompile Include="src\Shaders\PixelShader.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\Time.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\MacroUtils.h">

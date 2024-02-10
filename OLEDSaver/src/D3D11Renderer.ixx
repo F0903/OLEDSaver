@@ -7,6 +7,7 @@ module;
 #include <Windows.h>
 #include <fstream>
 #include <chrono>
+#include <thread>
 #include <ppl.h>
 #include <string>  
 #include <mutex>
@@ -23,6 +24,7 @@ import Window;
 import Shader;
 import Shader.PixelShader;
 import Shader.VertexShader;
+import Time;
 
 struct Vertex
 {
@@ -55,6 +57,7 @@ export class D3D11Renderer
 
 	Window& renderingWindow;
 	Window::Size currentWindowSize;
+	float targetFrameTime;
 
 	std::vector<VertexShader> vertexShaders;
 	std::mutex vertexShadersMutex;
@@ -70,8 +73,6 @@ export class D3D11Renderer
 		unsigned int indexCount;
 		unsigned int indexStart;
 	} currentlyDrawingInfo;
-
-	std::chrono::time_point<std::chrono::high_resolution_clock> startTime;
 
 	// Select the best adapter based on the most dedicated video memory. (a little primitive)
 	void SelectBestAdapter() {
@@ -113,7 +114,7 @@ export class D3D11Renderer
 		ASSERT(d3d11Device.As(&dxgiDevice));
 	}
 
-	void InitFullscreenSwapchain() NOEXCEPT_RELEASE {
+	void InitSwapchain() NOEXCEPT_RELEASE {
 		DXGI_SWAP_CHAIN_DESC1 swapchainDesc{
 			.Width = static_cast<UINT>(currentWindowSize.width),
 			.Height = static_cast<UINT>(currentWindowSize.height),
@@ -129,7 +130,6 @@ export class D3D11Renderer
 		};
 
 		ASSERT(dxgiFactory->CreateSwapChainForComposition(d3d11Device.Get(), &swapchainDesc, NULL, &swapchain));
-		ASSERT(dxgiDevice->SetMaximumFrameLatency(1));
 
 		ComPtr<ID3D11Texture2D> backbufferTexture;
 		ASSERT(swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), &backbufferTexture));
@@ -158,11 +158,12 @@ export class D3D11Renderer
 public:
 	D3D11Renderer(Window& window) : renderingWindow(window) {
 		currentWindowSize = window.GetSize();
-		startTime = std::chrono::high_resolution_clock::now();
+		targetFrameTime = 1 / static_cast<float>(GetDisplayRefreshHz());
+		
 		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
 		SelectBestAdapter();
 		InitDevice();
-		InitFullscreenSwapchain();
+		InitSwapchain();
 		InitDirectComposition();
 	}
 
@@ -275,10 +276,10 @@ public:
 	}
 
 	void Draw() NOEXCEPT_RELEASE {
-		const auto timeFrameStart = std::chrono::high_resolution_clock::now();
-		const auto timeSinceStart = std::chrono::duration_cast<std::chrono::milliseconds>(timeFrameStart - startTime);
+		const auto frameStart = Time::GetMillisSinceStart<float>();
+		
 		PixelShader::active->SetConstantBuffer({
-			static_cast<float>(timeSinceStart.count()) / 1000.0f,
+			Time::GetMillisSinceStart<float>() / 1000.0f,
 			{
 				static_cast<float>(currentWindowSize.width),
 				static_cast<float>(currentWindowSize.height)
@@ -290,5 +291,10 @@ public:
 		d3d11Context->ClearRenderTargetView(renderTarget.Get(), backbufferColor);
 		d3d11Context->DrawIndexed(currentlyDrawingInfo.indexCount, currentlyDrawingInfo.indexStart, currentlyDrawingInfo.vertexStart);
 		ASSERT(swapchain->Present(VRR ? 0 : 1, VRR ? DXGI_PRESENT_ALLOW_TEARING : 0));
+
+		const auto frameEnd = Time::GetMillisSinceStart<float>();
+		const auto frameTimeSpent = frameEnd - frameStart;
+		const auto adjustedFrameTarget = max(0, targetFrameTime - frameTimeSpent);
+		std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(adjustedFrameTarget)));
 	}
 };
