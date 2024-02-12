@@ -2,58 +2,71 @@
 #include <string> 
 #include <exception>
 #include <iostream>
+#include <chrono> //needed due to bug
+#include <thread> //needed due to bug
 #include "MacroUtils.h"
-#include <chrono>
-#include <thread>
-#include "../shaders/out/PixelShader.h"
+#include "../shaders/out/DefaultPixelShader.h"
 #include "../shaders/out/VertexShader.h" 
 
-import Window;
 import ErrorHandling; 
+import StringUtils; 
+import Window;
 import Shader;
 import D3D11Renderer;
-import StringUtils; 
+import DefaultShutdownEffect;
+import Time;
 
 #pragma warning(push)
 #pragma warning(disable : 4297) // WinMain is marked noexcept by default so this will make VS shut up about it.
 #pragma warning(disable : 4100) // For unused parameters.
 int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In_ PSTR cmdLine, _In_ int cmdShow) {
-	ASSERT(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
-
-	Window* window = nullptr;
-	D3D11Renderer* renderer = nullptr;
 	try {
-		window = new Window(instance, L"OLEDSaver", Window::Style::Fullscreen);
-		window->Update();
-		window->Show();
+		ASSERT(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
 
-		renderer = new D3D11Renderer(*window);
-		renderer->LoadShadersParallel({
+		auto window = Window(instance, L"OLEDSaver", Window::Style::Fullscreen);
+		auto renderer = D3D11Renderer(window);
+
+		window.Update();
+		window.Show();
+
+		renderer.LoadShadersParallel({
 			{{VertexShader_code}, ShaderType::Vertex},
-			{{PixelShader_code}, ShaderType::Pixel}
-		}); 
+			{{DefaultPixelShader_code}, ShaderType::Pixel}
+		});
 
-		auto& vertexShader = renderer->GetLoadedVertexShader(0);
-		auto& pixelShader = renderer->GetLoadedPixelShader(0);
-		vertexShader.SetActive();
-		
-		renderer->CreateFullscreenRect();
-		window->SetCursorVisibility(false);
+		auto& vertexShader = renderer.GetLoadedVertexShader(0);
+		auto& pixelShader = renderer.GetLoadedPixelShader(0);
 
-		pixelShader.SetActive();
-		renderer->Initialize(); 
+		auto effect = DefaultShutdownEffect(renderer, vertexShader, pixelShader, 1.0f);
+		effect.Initialize();
+
+		window.SetCursorVisibility(false);
 
 		MSG message{0};
 		PeekMessage(&message, NULL, 0, 0, PM_NOREMOVE);
 		bool gotMsg = false;
+		bool effectFinished = false;
+
+		Duration<std::nano> deltaTime = 0;
 		while (message.message != WM_QUIT) {
+			const auto frameStart = Timepoint();
 			gotMsg = (PeekMessage(&message, NULL, 0, 0, PM_REMOVE) != 0);
 			if (gotMsg) {
 				TranslateMessage(&message);
 				DispatchMessage(&message);
 			}
-			renderer->Draw();
+
+			if (!effectFinished) {
+				effectFinished = effect.DrawEffect(deltaTime, frameStart);
+			}
+			else {
+				//TODO: Sleep and test for conditions to wake up
+			}
+			const auto frameEnd = Timepoint();
+			deltaTime = frameEnd - frameStart;
 		}
+
+		CoUninitialize();
 	}
 	catch (std::exception& ex) {
 		auto msgResult = GetLastErrorMessage();
@@ -68,9 +81,5 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 			ErrorPopUp(ConvertString(ex.what()));
 		}
 	}
-
-	delete window;
-	delete renderer;
-	CoUninitialize();
 }
 #pragma warning(pop)

@@ -1,23 +1,17 @@
 module;
-#include <d3d11.h> 
-#include <dxgi1_5.h> 
-#include <d2d1_1.h>
-#include <d2d1_1helper.h>
-#include <wrl.h>
 #include <Windows.h>
+#include <d3d11.h>
+#include <dxgi1_5.h>
+#include <wrl.h>
+#include <ppl.h>
+#include <dcomp.h>
 #include <fstream>
+#include <string>
+#include <mutex>
 #include <chrono>
 #include <thread>
-#include <ppl.h>
-#include <string>  
-#include <mutex>
-#include <span>
-#include <dcomp.h>
 #include "MacroUtils.h"
 export module D3D11Renderer;
-
-using namespace Microsoft::WRL;
-using namespace D2D1;
 
 import ErrorHandling;
 import Window;
@@ -43,21 +37,21 @@ export class D3D11Renderer
 
 	D3D_FEATURE_LEVEL selectedFeatureLevel;
 
-	ComPtr<IDXGIDevice1> dxgiDevice;
-	ComPtr<ID3D11Device> d3d11Device;
-	ComPtr<ID3D11DeviceContext> d3d11Context;
+	// IntelliSense is currently bugged with namespace aliasing in C++20 modules, so we have to use the full name.
+	Microsoft::WRL::ComPtr<IDXGIDevice1> dxgiDevice;
+	Microsoft::WRL::ComPtr<ID3D11Device> d3d11Device;
+	Microsoft::WRL::ComPtr<ID3D11DeviceContext> d3d11Context;
 
-	ComPtr<IDXGIAdapter2> dxgiAdapter;
-	ComPtr<IDXGIFactory2> dxgiFactory;
-	ComPtr<IDXGISwapChain1> swapchain;
-	ComPtr<ID3D11RenderTargetView> renderTarget;
+	Microsoft::WRL::ComPtr<IDXGIAdapter2> dxgiAdapter;
+	Microsoft::WRL::ComPtr<IDXGIFactory2> dxgiFactory;
+	Microsoft::WRL::ComPtr<IDXGISwapChain1> swapchain;
+	Microsoft::WRL::ComPtr<ID3D11RenderTargetView> renderTarget;
 
-	ComPtr<IDCompositionDevice> compDevice;
-	ComPtr<IDCompositionTarget> compTarget;
+	Microsoft::WRL::ComPtr<IDCompositionDevice> compDevice;
+	Microsoft::WRL::ComPtr<IDCompositionTarget> compTarget;
 
 	Window& renderingWindow;
 	Window::Size currentWindowSize;
-	float targetFrameTime;
 
 	std::vector<VertexShader> vertexShaders;
 	std::mutex vertexShadersMutex;
@@ -65,7 +59,7 @@ export class D3D11Renderer
 	std::vector<PixelShader> pixelShaders;
 	std::mutex pixelShadersMutex;
 
-	ComPtr<ID3D11Buffer> vertexBuffer;
+	Microsoft::WRL::ComPtr<ID3D11Buffer> vertexBuffer;
 	struct CurrentlyDrawingInfo
 	{
 		unsigned int vertexCount;
@@ -73,6 +67,8 @@ export class D3D11Renderer
 		unsigned int indexCount;
 		unsigned int indexStart;
 	} currentlyDrawingInfo;
+
+	Duration<std::milli> targetFrameTime;
 
 	// Select the best adapter based on the most dedicated video memory. (a little primitive)
 	void SelectBestAdapter() {
@@ -131,7 +127,7 @@ export class D3D11Renderer
 
 		ASSERT(dxgiFactory->CreateSwapChainForComposition(d3d11Device.Get(), &swapchainDesc, NULL, &swapchain));
 
-		ComPtr<ID3D11Texture2D> backbufferTexture;
+		Microsoft::WRL::ComPtr<ID3D11Texture2D> backbufferTexture;
 		ASSERT(swapchain->GetBuffer(0, __uuidof(ID3D11Texture2D), &backbufferTexture));
 		ASSERT(d3d11Device->CreateRenderTargetView(backbufferTexture.Get(), NULL, &renderTarget));
 		d3d11Context->OMSetRenderTargets(1, renderTarget.GetAddressOf(), NULL);
@@ -148,7 +144,7 @@ export class D3D11Renderer
 	void InitDirectComposition() NOEXCEPT_RELEASE {
 		ASSERT(DCompositionCreateDevice(dxgiDevice.Get(), __uuidof(compDevice), &compDevice));
 		ASSERT(compDevice->CreateTargetForHwnd(renderingWindow.GetHandle(), TRUE, &compTarget));
-		ComPtr<IDCompositionVisual> compVisual;
+		Microsoft::WRL::ComPtr<IDCompositionVisual> compVisual;
 		ASSERT(compDevice->CreateVisual(&compVisual));
 		ASSERT(compVisual->SetContent(swapchain.Get()));
 		ASSERT(compTarget->SetRoot(compVisual.Get()));
@@ -156,10 +152,8 @@ export class D3D11Renderer
 	}
 
 public:
-	D3D11Renderer(Window& window) : renderingWindow(window) {
+	D3D11Renderer(Window& window) : renderingWindow(window), targetFrameTime(static_cast<long long>((1.0f / static_cast<double>(GetDisplayRefreshHz())) * 1000)) {
 		currentWindowSize = window.GetSize();
-		targetFrameTime = 1 / static_cast<float>(GetDisplayRefreshHz());
-		
 		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
 		SelectBestAdapter();
 		InitDevice();
@@ -237,7 +231,7 @@ public:
 		d3d11Context->IASetVertexBuffers(0, 1, vertexBuffer.GetAddressOf(), strides, offsets);
 		d3d11Context->IASetPrimitiveTopology(D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
 
-		ComPtr<ID3D11Buffer> indexBuffer;
+		Microsoft::WRL::ComPtr<ID3D11Buffer> indexBuffer;
 		unsigned int indices[] = {0, 1, 2, 2, 3, 0};
 
 		D3D11_BUFFER_DESC bufferDesc{
@@ -264,37 +258,39 @@ public:
 		};
 	}
 
-	void Initialize() NOEXCEPT_RELEASE {
-		VertexShader::active->SetInputLayout();
-		PixelShader::active->InitConstantBuffer({
+	void Initialize(VertexShader& vertexShader, PixelShader& pixelShader) NOEXCEPT_RELEASE {
+		vertexShader.SetInputLayout();
+		pixelShader.InitConstantBuffer({
 			0.0f,
 			{
 				static_cast<float>(currentWindowSize.width),
 				static_cast<float>(currentWindowSize.height)
 			}
-		});
+		}, ConstantBufferSlot::Default);
 	}
 
-	void Draw() NOEXCEPT_RELEASE {
-		const auto frameStart = Time::GetMillisSinceStart<float>();
-		
-		PixelShader::active->SetConstantBuffer({
-			Time::GetMillisSinceStart<float>() / 1000.0f,
+	void Draw(PixelShader& pixelShader, const Timepoint& frameStartTime) NOEXCEPT_RELEASE {
+		pixelShader.SetConstantBuffer({
+			(Timepoint() - frameStartTime).Cast<std::milli>().GetCount<float>() / 1000.0f,
 			{
 				static_cast<float>(currentWindowSize.width),
 				static_cast<float>(currentWindowSize.height)
 			}
-		});
+		}, ConstantBufferSlot::Default);
 
-		static constexpr const FLOAT backbufferColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 		d3d11Context->OMSetRenderTargets(1, renderTarget.GetAddressOf(), NULL);
+		static constexpr const FLOAT backbufferColor[4] = {0.0f, 0.0f, 0.0f, 1.0f};
 		d3d11Context->ClearRenderTargetView(renderTarget.Get(), backbufferColor);
+		
 		d3d11Context->DrawIndexed(currentlyDrawingInfo.indexCount, currentlyDrawingInfo.indexStart, currentlyDrawingInfo.vertexStart);
-		ASSERT(swapchain->Present(VRR ? 0 : 1, VRR ? DXGI_PRESENT_ALLOW_TEARING : 0));
 
-		const auto frameEnd = Time::GetMillisSinceStart<float>();
-		const auto frameTimeSpent = frameEnd - frameStart;
-		const auto adjustedFrameTarget = max(0, targetFrameTime - frameTimeSpent);
-		std::this_thread::sleep_for(std::chrono::milliseconds(static_cast<long long>(adjustedFrameTarget)));
+		const auto timeTaken = Timepoint() - frameStartTime;
+		if (timeTaken < targetFrameTime) {
+			const auto sleepDuration = targetFrameTime.Get() - timeTaken.Get();
+			std::this_thread::sleep_for(sleepDuration);
+		}
+		DEBUG_EXPRESSION(const auto debugTotalTimeTaken = (Timepoint() - frameStartTime).Cast<std::milli>().GetCount<float>();,);
+		ASSERT(swapchain->Present(VRR ? 0 : 1, VRR ? DXGI_PRESENT_ALLOW_TEARING : 0));
+		VSTUDIO_DEBUG_OUTPUT("Presented frame took " << debugTotalTimeTaken << "ms " << "[" << 1/(debugTotalTimeTaken/1000.0f) << " FPS]");
 	}
 };

@@ -7,16 +7,14 @@ module;
 #include <fstream>
 #include "../MacroUtils.h"
 export module Shader.PixelShader;
+
 import Shader;
 
 export class PixelShader : public Shader
 {
-	friend class D3D11Renderer;
-
 #pragma warning(push)
 #pragma warning(disable : 4324)
-	__declspec(align(16))
-		struct ConstantBuffer
+	__declspec(align(16)) struct DefaultConstantBuffer
 	{
 		float timeMs;
 		struct
@@ -26,11 +24,9 @@ export class PixelShader : public Shader
 	};
 #pragma warning(pop)
 
-	inline static PixelShader* active; /// The currently active PixelShader;
-
 	Microsoft::WRL::ComPtr<ID3D11PixelShader> shader;
-	Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
-	std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> resourceViews;
+	std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constantBuffers;
+	std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> resources;
 	Microsoft::WRL::ComPtr<ID3D11SamplerState> samplerState;
 
 public:
@@ -43,9 +39,12 @@ public:
 	}
 
 public:
-	void InitConstantBuffer(const ConstantBuffer& bufferData) NOEXCEPT_RELEASE {
+	template<class T = DefaultConstantBuffer>
+	void InitConstantBuffer(const T& bufferData, const ConstantBufferSlot slot) NOEXCEPT_RELEASE {
+		const auto slotNum = static_cast<UINT>(slot);
+
 		D3D11_BUFFER_DESC bufferDesc{
-			.ByteWidth = sizeof(ConstantBuffer),
+			.ByteWidth = sizeof(T),
 			.Usage = D3D11_USAGE_DYNAMIC,
 			.BindFlags = D3D11_BIND_CONSTANT_BUFFER,
 			.CPUAccessFlags = D3D11_CPU_ACCESS_WRITE,
@@ -59,14 +58,21 @@ public:
 			.SysMemSlicePitch = 0,
 		};
 
+		Microsoft::WRL::ComPtr<ID3D11Buffer> constantBuffer;
 		ASSERT(device.CreateBuffer(&bufferDesc, &initData, &constantBuffer));
-		context.PSSetConstantBuffers(0, 1, constantBuffer.GetAddressOf());
+
+		context.PSSetConstantBuffers(slotNum, 1, constantBuffer.GetAddressOf());
+		constantBuffers.push_back(std::move(constantBuffer));
 	}
 
-	void SetConstantBuffer(const ConstantBuffer& bufferData) NOEXCEPT_RELEASE {
-		D3D11_MAPPED_SUBRESOURCE resourceMap{0};
+	template<class T = DefaultConstantBuffer>
+	void SetConstantBuffer(const T& bufferData, const ConstantBufferSlot slot) NOEXCEPT_RELEASE {
+		const auto slotNum = static_cast<UINT>(slot);
+
+		const auto constantBuffer = constantBuffers[slotNum];
+		D3D11_MAPPED_SUBRESOURCE resourceMap;
 		ASSERT(context.Map(constantBuffer.Get(), 0, D3D11_MAP_WRITE_DISCARD, 0, &resourceMap));
-		memcpy(resourceMap.pData, &bufferData, sizeof(ConstantBuffer));
+		memcpy(resourceMap.pData, &bufferData, sizeof(T));
 		context.Unmap(constantBuffer.Get(), 0);
 	}
 
@@ -90,7 +96,7 @@ public:
 		Microsoft::WRL::ComPtr<ID3D11Texture2D> newTexture;
 		ASSERT(device.CreateTexture2D(&textureDesc, &subresourceData, &newTexture));
 		context.Unmap(texture, 0);
-		
+
 		D3D11_SHADER_RESOURCE_VIEW_DESC resourceDesc{
 			.Format = textureDesc.Format,
 			.ViewDimension = D3D11_SRV_DIMENSION_TEXTURE2D,
@@ -102,7 +108,7 @@ public:
 		Microsoft::WRL::ComPtr<ID3D11ShaderResourceView> resourceView;
 		ASSERT(device.CreateShaderResourceView(newTexture.Get(), &resourceDesc, &resourceView));
 
-		resourceViews.push_back(std::move(resourceView));
+		resources.push_back(std::move(resourceView));
 
 		D3D11_SAMPLER_DESC samplerDesc{
 			.Filter = D3D11_FILTER_MIN_MAG_MIP_LINEAR,
@@ -121,7 +127,6 @@ public:
 
 	void SetActive() NOEXCEPT_RELEASE override {
 		context.PSSetShader(shader.Get(), NULL, NULL);
-		context.PSSetShaderResources(0, static_cast<UINT>(resourceViews.size()), resourceViews.data()->GetAddressOf());
-		active = this;
+		context.PSSetShaderResources(0, static_cast<UINT>(resources.size()), resources.data()->GetAddressOf());
 	}
 };

@@ -34,4 +34,4 @@
 	PLATFORM_OSTRINGSTREAM _os;\
 	_os << msg << '\n';\
 	OutputDebugString(_os.str().c_str());\
-})
+},)

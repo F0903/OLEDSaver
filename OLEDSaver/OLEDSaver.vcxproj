@@ -100,17 +100,19 @@
     <ClCompile Include="src\Shaders\PixelShader.ixx" />
     <ClCompile Include="src\Shaders\Shader.ixx" />
     <ClCompile Include="src\Shaders\VertexShader.ixx" />
+    <ClCompile Include="src\ShutdownEffects\DefaultShutdownEffect.ixx" />
+    <ClCompile Include="src\ShutdownEffects\ShutdownEffect.ixx" />
     <ClCompile Include="src\StringUtils.ixx" />
     <ClCompile Include="src\Time.ixx" />
     <ClCompile Include="src\Window.ixx" />
   </ItemGroup>
   <ItemGroup>
+    <ClInclude Include="shaders\out\DefaultPixelShader.h" />
     <ClInclude Include="src\MacroUtils.h" />
-    <ClInclude Include="shaders\out\PixelShader.h" />
     <ClInclude Include="shaders\out\VertexShader.h" />
   </ItemGroup>
   <ItemGroup>
-    <FxCompile Include="shaders\PixelShader.hlsl">
+    <FxCompile Include="shaders\DefaultPixelShader.hlsl">
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">Pixel</ShaderType>
       <ShaderType Condition="'$(Configuration)|$(Platform)'=='Release|x64'">Pixel</ShaderType>
       <VariableName Condition="'$(Configuration)|$(Platform)'=='Debug|x64'">%(Filename)_code</VariableName>

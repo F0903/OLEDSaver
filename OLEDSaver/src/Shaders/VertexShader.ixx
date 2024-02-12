@@ -11,10 +11,6 @@ import Shader;
 
 export class VertexShader : public Shader
 {
-	friend class D3D11Renderer;
-
-	inline static VertexShader* active; /// The currently active PixelShader;
-
 	Microsoft::WRL::ComPtr<ID3D11VertexShader> shader;
 
 public:
@@ -26,7 +22,7 @@ public:
 		ASSERT(device.CreateVertexShader(code.data, code.dataLength, nullptr, &shader));
 	}
 
-private:
+public:
 	void SetInputLayout() const NOEXCEPT_RELEASE {
 		D3D11_INPUT_ELEMENT_DESC vertexProps[] = {
 			{"POSITION", 0, DXGI_FORMAT_R32G32B32_FLOAT, 0, 0, D3D11_INPUT_PER_VERTEX_DATA, 0}
@@ -37,9 +33,7 @@ private:
 		context.IASetInputLayout(inputLayout.Get());
 	}
 
-public:
 	void SetActive() NOEXCEPT_RELEASE override {
 		context.VSSetShader(shader.Get(), NULL, NULL);
-		active = this;
 	}
 };

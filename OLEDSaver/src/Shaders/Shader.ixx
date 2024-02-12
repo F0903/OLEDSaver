@@ -11,6 +11,13 @@ export module Shader;
 // using namespace aliasing will break intellisense on module import
 
 export
+enum class ConstantBufferSlot
+{
+	Default = 0,
+	Custom = 1
+};
+
+export
 enum class ShaderType
 {
 	Vertex,
@@ -48,8 +55,6 @@ export struct ShaderCode
 
 export class Shader
 {
-	friend class D3D11Renderer;
-
 protected:
 	ID3D11Device& device;
 	ID3D11DeviceContext& context;
