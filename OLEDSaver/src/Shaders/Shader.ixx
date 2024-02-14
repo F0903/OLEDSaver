@@ -30,9 +30,6 @@ export struct ShaderCode
 	const size_t dataLength;
 	const bool heapAllocated;
 
-	ShaderCode(ShaderCode&&) = default;
-	ShaderCode(const ShaderCode&) = default;
-
 	template<class DataT, size_t DataLength>
 	ShaderCode(DataT(&data)[DataLength], const bool heapAllocated = false) :
 		data(data),

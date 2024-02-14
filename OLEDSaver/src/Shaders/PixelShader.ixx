@@ -24,6 +24,8 @@ export class PixelShader : public Shader
 	};
 #pragma warning(pop)
 
+	inline static PixelShader* active = nullptr;
+
 	Microsoft::WRL::ComPtr<ID3D11PixelShader> shader;
 	std::vector<Microsoft::WRL::ComPtr<ID3D11Buffer>> constantBuffers;
 	std::vector<Microsoft::WRL::ComPtr<ID3D11ShaderResourceView>> resources;
@@ -39,10 +41,13 @@ public:
 	}
 
 public:
+	static PixelShader* GetActive() noexcept {
+		return active;
+	}
+
 	template<class T = DefaultConstantBuffer>
 	void InitConstantBuffer(const T& bufferData, const ConstantBufferSlot slot) NOEXCEPT_RELEASE {
 		const auto slotNum = static_cast<UINT>(slot);
-
 		D3D11_BUFFER_DESC bufferDesc{
 			.ByteWidth = sizeof(T),
 			.Usage = D3D11_USAGE_DYNAMIC,
@@ -128,5 +133,6 @@ public:
 	void SetActive() NOEXCEPT_RELEASE override {
 		context.PSSetShader(shader.Get(), NULL, NULL);
 		context.PSSetShaderResources(0, static_cast<UINT>(resources.size()), resources.data()->GetAddressOf());
+		active = this;
 	}
 };

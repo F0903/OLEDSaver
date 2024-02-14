@@ -21,8 +21,8 @@ export OptionalValue<const std::wstring> GetLastErrorMessage() {
 	return Optional::Value(std::wstring(buffer));
 }
 
-export void ErrorPopUp(const std::wstring& msg) {   
-	auto result = MessageBox(NULL, msg.c_str(), L"Error!", MB_OK | MB_SYSTEMMODAL);
+export void ErrorPopUp(const std::wstring& msg) {
+	auto result = MessageBox(NULL, msg.c_str(), L"OLEDSaver Error!", MB_OK | MB_SYSTEMMODAL | MB_DEFAULT_DESKTOP_ONLY);
 	if (result == 0) {
 		auto wideErrorMsg = GetLastErrorMessage();
 		auto errorMsg = wideErrorMsg.HasValue() ? ConvertWString(wideErrorMsg.Unwrap()) : "No error specified.";

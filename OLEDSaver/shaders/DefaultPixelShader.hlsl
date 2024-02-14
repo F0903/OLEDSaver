@@ -1,6 +1,6 @@
 #include <Common.hlsli>
 
-cbuffer ConstantBuffer : register(b0)
+cbuffer DefaultConstantBuffer : register(b0)
 {
     float time;
     float2 resolution;

@@ -1,6 +1,8 @@
 module;
 #include <chrono> //needed due to bug
 #include <thread> //needed due to bug
+#include <Windows.h>
+#include "../../shaders/out/DefaultPixelShader.h"
 export module DefaultShutdownEffect;
 
 import ShutdownEffect;
@@ -21,7 +23,12 @@ export class DefaultShutdownEffect : public ShutdownEffect
 #pragma warning(pop)
 
 public:
-	DefaultShutdownEffect(D3D11Renderer& renderer, VertexShader& vertexShader, PixelShader& pixelShader, float durationSeconds) : ShutdownEffect(renderer, vertexShader, pixelShader, durationSeconds) {
+	DefaultShutdownEffect(D3D11Renderer& renderer, float durationSeconds) : ShutdownEffect(
+		renderer,
+		renderer.GetLoadedVertexShader(0), // Use default vertex shader (assume it has already been loaded)
+		static_cast<PixelShader&>(renderer.LoadShader(DefaultPixelShader_code, ShaderType::Pixel)),
+		durationSeconds
+	) {
 	}
 
 	void Initialize() override {

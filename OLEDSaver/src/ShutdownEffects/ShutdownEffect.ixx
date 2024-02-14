@@ -26,10 +26,10 @@ protected:
 
 public:
 	virtual void Initialize() {
-		renderer.Initialize(vertexShader, pixelShader);
-		renderer.CreateFullscreenRect();
 		vertexShader.SetActive();
 		pixelShader.SetActive();
+		renderer.CreateFullscreenRect();
+		renderer.Initialize();
 	}
 
 	/// <summary>

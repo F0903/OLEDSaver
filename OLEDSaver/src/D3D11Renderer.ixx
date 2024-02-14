@@ -152,8 +152,11 @@ export class D3D11Renderer
 	}
 
 public:
-	D3D11Renderer(Window& window) : renderingWindow(window), targetFrameTime(static_cast<long long>((1.0f / static_cast<double>(GetDisplayRefreshHz())) * 1000)) {
-		currentWindowSize = window.GetSize();
+	D3D11Renderer(Window& window) : 
+		renderingWindow(window), 
+		currentWindowSize(window.GetSize()),
+		targetFrameTime(static_cast<long long>((1.0f / static_cast<double>(GetDisplayRefreshHz())) * 1000)
+	) {
 		ASSERT(CreateDXGIFactory2(0, __uuidof(IDXGIFactory2), &dxgiFactory));
 		SelectBestAdapter();
 		InitDevice();
@@ -161,9 +164,8 @@ public:
 		InitDirectComposition();
 	}
 
-private:
-	void LoadShader(const std::pair<const ShaderCode&, const ShaderType>& info) NOEXCEPT_RELEASE {
-		const auto& [code, type] = info;
+public:
+	Shader& LoadShader(const ShaderCode& code, const ShaderType type) NOEXCEPT_RELEASE {
 		switch (type) {
 			case ShaderType::Vertex:
 			{
@@ -172,7 +174,7 @@ private:
 					std::lock_guard lock(vertexShadersMutex);
 					vertexShaders.push_back(std::move(shader));
 				}
-				break;
+				return vertexShaders.back();
 			}
 			case ShaderType::Pixel:
 			{
@@ -181,17 +183,17 @@ private:
 					std::lock_guard lock(pixelShadersMutex);
 					pixelShaders.push_back(std::move(shader));
 				}
-				break;
+				return pixelShaders.back();
 			}
 		}
+		throw std::exception("Cannot load unknown shader type!");
 	}
 
-public:
-	inline void LoadShadersParallel(const std::vector<std::pair<const ShaderCode&, const ShaderType>>& shaders) NOEXCEPT_RELEASE {
+	inline void LoadShadersParallel(const std::vector<std::pair<const ShaderCode, const ShaderType>>& shaders) NOEXCEPT_RELEASE {
 		// Can't get parallel_for_each to work, so using this.
 		concurrency::parallel_for(size_t(0), shaders.size(), [&](size_t i) {
-			auto& shaderInfo = shaders[i];
-			LoadShader(shaderInfo);
+			auto& [code, type] = shaders[i];
+			LoadShader(code, type);
 		});
 	}
 
@@ -258,9 +260,9 @@ public:
 		};
 	}
 
-	void Initialize(VertexShader& vertexShader, PixelShader& pixelShader) NOEXCEPT_RELEASE {
-		vertexShader.SetInputLayout();
-		pixelShader.InitConstantBuffer({
+	void Initialize() NOEXCEPT_RELEASE {
+		VertexShader::GetActive()->SetInputLayout();
+		PixelShader::GetActive()->InitConstantBuffer({
 			0.0f,
 			{
 				static_cast<float>(currentWindowSize.width),

@@ -56,16 +56,10 @@
     <ClInclude Include="src\MacroUtils.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="shaders\out\VertexShader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
-    <ClInclude Include="shaders\out\DefaultPixelShader.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <FxCompile Include="shaders\DefaultPixelShader.hlsl" />
-    <FxCompile Include="shaders\VertexShader.hlsl" />
+    <FxCompile Include="shaders\DefaultVertexShader.hlsl" />
   </ItemGroup>
   <ItemGroup>
     <None Include="shaders\Common.hlsli" />
