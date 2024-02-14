@@ -34,17 +34,18 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 		window->Update();
 		window->Show();
 
-		auto effect = DefaultShutdownEffect(renderer, 1.0f);
+		auto effect = DefaultShutdownEffect(*window, renderer, 1.0f);
 		effect.Initialize();
-
-		window->SetCursorVisibility(false);
 
 		MSG message{0};
 		PeekMessage(&message, NULL, 0, 0, PM_NOREMOVE);
 		bool gotMsg = false;
-		bool effectFinished = false;
 
+		using namespace std::chrono_literals;
 		Duration<std::nano> deltaTime = 0;
+		Duration<std::milli> idleSleepTime = 1000ms;
+		bool sleptFrame = false;
+		bool poweredOff = false;
 		while (message.message != WM_QUIT) {
 			const auto frameStart = Timepoint();
 			gotMsg = (PeekMessage(&message, NULL, 0, 0, PM_REMOVE) != 0);
@@ -53,14 +54,13 @@ int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In
 				DispatchMessage(&message);
 			}
 
-			if (!effectFinished) {
-				effectFinished = effect.DrawEffect(deltaTime, frameStart);
-			}
-			else {
-				//TODO: Sleep and test for conditions to wake up
+			if ((sleptFrame = effect.DrawEffect(deltaTime, frameStart)) == true) {
+				poweredOff = !effect.GetPoweringOnState();
+				std::this_thread::sleep_for(1s);
 			}
 			const auto frameEnd = Timepoint();
 			deltaTime = frameEnd - frameStart;
+			if(sleptFrame) deltaTime -= idleSleepTime;
 		}
 
 		CoUninitialize();

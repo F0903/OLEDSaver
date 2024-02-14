@@ -4,6 +4,7 @@ module;
 #include <Windows.h>  
 #include <exception>
 #include <type_traits>
+#include <functional>
 #include "MacroUtils.h"
 export module Window;
 
@@ -45,6 +46,8 @@ private:
 
 	Size currentSize;
 
+	std::function<void()> onInputCallback;
+
 public:
 	Window(HINSTANCE hInstance, const std::wstring& title, Style style) : hInstance(hInstance), title(title), style(style) {
 		switch (style) {
@@ -63,10 +66,21 @@ public:
 
 private:
 	static LPARAM CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+		auto me = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
 		switch (msg) {
+			case WM_LBUTTONDOWN:
+			case WM_MBUTTONDOWN:
+			case WM_RBUTTONDOWN:
+			case WM_XBUTTONDOWN:
+			case WM_MOUSEMOVE:
+			case WM_SYSKEYDOWN:
+			case WM_KEYDOWN:
+			{
+				if (me->onInputCallback) me->onInputCallback();
+				break;
+			}
 			case WM_CLOSE:
 			{
-				auto me = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
 				me->Close();
 				break;
 			}
@@ -125,6 +139,10 @@ private:
 	}
 
 public:
+	void SetOnInputCallback(const std::function<void()>& callback) {
+		onInputCallback = callback;
+	}
+
 	void Update() const {
 		if (closed) {
 			throw std::exception("Window is closed!");

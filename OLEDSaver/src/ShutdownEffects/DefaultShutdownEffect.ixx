@@ -10,6 +10,7 @@ import D3D11Renderer;
 import Shader.PixelShader;
 import Shader.VertexShader;
 import Time;
+import Window;
 
 export class DefaultShutdownEffect : public ShutdownEffect
 {
@@ -22,18 +23,28 @@ export class DefaultShutdownEffect : public ShutdownEffect
 	};
 #pragma warning(pop)
 
+	Window& window;
+
+	bool initPowerOffState = false;
+
 public:
-	DefaultShutdownEffect(D3D11Renderer& renderer, float durationSeconds) : ShutdownEffect(
+	DefaultShutdownEffect(Window& window, D3D11Renderer& renderer, float durationSeconds) : ShutdownEffect(
 		renderer,
 		renderer.GetLoadedVertexShader(0), // Use default vertex shader (assume it has already been loaded)
 		static_cast<PixelShader&>(renderer.LoadShader(DefaultPixelShader_code, ShaderType::Pixel)),
 		durationSeconds
-	) {
+	), window(window) {
 	}
 
 	void Initialize() override {
 		ShutdownEffect::Initialize();
 		pixelShader.InitConstantBuffer<ConstantBuffer>({effectTime, durationSeconds}, ConstantBufferSlot::Custom);
+		window.SetOnInputCallback([this]() {
+			if (GetIsDone()) {
+				SetPowerOn();
+				window.SetCursorVisibility(true);
+			}
+		});
 	}
 
 	bool DrawEffect(const Duration<std::nano>& deltaTime, const Timepoint& frameStartTime) {
@@ -43,12 +54,19 @@ public:
 		if (poweringOn) {
 			effectTime -= stepAmount;
 			if (effectTime <= 0.0f) {
+				initPowerOffState = false;
+				isDone = true;
 				return true;
 			}
 		}
 		else {
+			if (!initPowerOffState) {
+				window.SetCursorVisibility(false);
+				initPowerOffState = true;
+			}
 			effectTime += stepAmount;
 			if (effectTime >= 1.0f) {
+				isDone = true;
 				return true;
 			}
 		}

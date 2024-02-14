@@ -19,6 +19,7 @@ protected:
 
 	float effectTime = 0.0f;
 
+	bool isDone = false;
 	bool poweringOn = false;
 
 	ShutdownEffect(D3D11Renderer& renderer, VertexShader& vertexShader, PixelShader& pixelShader, float durationSeconds) : renderer(renderer), vertexShader(vertexShader), pixelShader(pixelShader), durationSeconds(durationSeconds) {
@@ -32,10 +33,19 @@ public:
 		renderer.Initialize();
 	}
 
+	inline bool GetIsDone() const noexcept {
+		return isDone;
+	}
+
+	inline bool GetPoweringOnState() const noexcept {
+		return poweringOn;
+	}
+
 	/// <summary>
 	/// Called when "shutting down"
 	/// </summary>
 	virtual void SetShutDown() {
+		isDone = false;
 		poweringOn = false;
 	}
 
@@ -43,6 +53,7 @@ public:
 	/// Called when "powering on"
 	/// </summary>
 	void SetPowerOn() {
+		isDone = false;
 		poweringOn = true;
 	}
 

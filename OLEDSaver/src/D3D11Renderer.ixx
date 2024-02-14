@@ -293,6 +293,6 @@ public:
 		}
 		DEBUG_EXPRESSION(const auto debugTotalTimeTaken = (Timepoint() - frameStartTime).Cast<std::milli>().GetCount<float>();,);
 		ASSERT(swapchain->Present(VRR ? 0 : 1, VRR ? DXGI_PRESENT_ALLOW_TEARING : 0));
-		VSTUDIO_DEBUG_OUTPUT("Presented frame took " << debugTotalTimeTaken << "ms " << "[" << 1/(debugTotalTimeTaken/1000.0f) << " FPS]");
+		VSTUDIO_DEBUG_OUTPUT("Presented frame took ~" << debugTotalTimeTaken << "ms " << "[~" << 1/(debugTotalTimeTaken/1000.0f) << " FPS]");
 	}
 };

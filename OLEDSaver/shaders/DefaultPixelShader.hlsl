@@ -14,7 +14,7 @@ cbuffer DefaultEffectConstantBuffer : register(b1)
 
 float Ease(float x)
 {
-    return sin((x * 3.1415) / 2.0) * 0.5f;
+    return sin((x * 3.1415) * 0.5f) * 0.5f;
 }
 
 float CalcAlpha(float2 uv, float t)
@@ -22,8 +22,7 @@ float CalcAlpha(float2 uv, float t)
     float stepA = step(t, uv.y);
     float stepB = step(uv.y, 1 - t);
     float stepTotal = stepA * stepB;
-    float desiredAlpha = t * 2;
-    return desiredAlpha * stepTotal + max(0, (1 - stepTotal));
+    return t * stepTotal + max(0, (1 - stepTotal));
 }
 
 float4 main(V2P input) : SV_TARGET

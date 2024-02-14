@@ -34,6 +34,16 @@ public:
 	}
 
 	template<class A>
+	inline constexpr void operator-=(const Duration<A>& other) noexcept {
+		duration -= other.Get();
+	}
+
+	template<class A>
+	inline constexpr void operator+=(const Duration<A>& other) noexcept {
+		duration += other.Get();
+	}
+
+	template<class A>
 	inline constexpr Duration<Ratio> operator-(const Duration<A>& other) const noexcept {
 		return Duration<Ratio>(duration - other.Get());
 	}
