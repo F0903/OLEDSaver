@@ -153,7 +153,7 @@ public:
 		}
 	}
 
-	void Show() const {
+	inline void Show() const noexcept {
 		ShowWindow(windowHandle, SW_SHOW);
 	}
 
@@ -173,7 +173,7 @@ public:
 		ShowCursor(visible);
 	}
 
-	void Close() {
+	void Close() noexcept {
 		if (closed) return;
 		DestroyWindow(windowHandle);
 		UnregisterClass(windowClass.c_str(), hInstance);

@@ -10,22 +10,22 @@ class OptionalValue
 	const T value;
 
 public:  
-	inline constexpr OptionalValue(const T& value) : value(value), hasValue(true) {
+	constexpr OptionalValue(const T& value) : value(value), hasValue(true) {
 	}
 
-	inline constexpr OptionalValue(T&& value) : value(value), hasValue(true) {
+	constexpr OptionalValue(T&& value) : value(value), hasValue(true) {
 	}
 
-	inline constexpr OptionalValue() : hasValue(false) {
+	constexpr OptionalValue() : hasValue(false) {
 	}
 
-	inline constexpr void AssertValue() const {
+	constexpr void AssertValue() const {
 		if (!hasValue) {
 			throw std::exception("Optional was none when unwrapped!");
 		}
 	} 
 
-	inline constexpr operator OptionalValue<const T>() {
+	constexpr operator OptionalValue<const T>() {
 		return OptionalValue<const T>(value);
 	}
 

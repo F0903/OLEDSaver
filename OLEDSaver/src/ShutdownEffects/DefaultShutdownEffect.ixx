@@ -40,14 +40,14 @@ public:
 		ShutdownEffect::Initialize();
 		pixelShader.InitConstantBuffer<ConstantBuffer>({effectTime, durationSeconds}, ConstantBufferSlot::Custom);
 		window.SetOnInputCallback([this]() {
-			if (GetIsDone()) {
+			if (isDone) {
 				SetPowerOn();
 				window.SetCursorVisibility(true);
 			}
 		});
 	}
 
-	bool DrawEffect(const Duration<std::nano>& deltaTime, const Timepoint& frameStartTime) {
+	bool DrawEffect(const Timepoint& frameStartTime) {
 		const auto stepCast = deltaTime.Cast<std::milli>();
 		const auto stepAmount = (static_cast<float>(stepCast.GetCount<double>() / 1000.0)) / durationSeconds;
 
