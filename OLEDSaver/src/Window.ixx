@@ -8,7 +8,8 @@ module;
 #include "MacroUtils.h"
 export module Window;
 
-import Optional; 
+import Optional;
+import Event;
 
 export const unsigned int GetDisplayRefreshHz() {
 	DEVMODE deviceMode{0};
@@ -34,6 +35,9 @@ public:
 		int height;
 	};
 
+
+	static inline Event<void()> OnKeyboardMouseEvent;
+
 private:
 	inline static std::unordered_set<std::wstring> classes;
 
@@ -46,7 +50,7 @@ private:
 
 	Size currentSize;
 
-	std::function<void()> onInputCallback;
+	const DWORD defaultWindowExFlags = WS_EX_NOREDIRECTIONBITMAP | WS_EX_NOACTIVATE | WS_EX_TOPMOST;
 
 public:
 	Window(HINSTANCE hInstance, const std::wstring& title, Style style) : hInstance(hInstance), title(title), style(style) {
@@ -65,18 +69,44 @@ public:
 	}
 
 private:
+	// Currently only returns a boolean if keyboard or mouse input was detected.
+	static bool ReadRawInput(HRAWINPUT input) {
+		UINT dwSize;
+		GetRawInputData(input, RID_INPUT, NULL, &dwSize, sizeof(RAWINPUTHEADER));
+		auto inputBuf = new BYTE[dwSize];
+		if (inputBuf == 0) {
+			throw;
+		}
+
+		if (GetRawInputData(input, RID_INPUT, inputBuf, &dwSize, sizeof(RAWINPUTHEADER)) != dwSize) {
+			VSTUDIO_DEBUG_OUTPUT("GetRawInputData did not return correct size!");
+		}
+
+		auto rawBuf = reinterpret_cast<RAWINPUT*>(inputBuf);
+
+		if (rawBuf->header.dwType == RIM_TYPEKEYBOARD) {
+			//TODO: read input.
+			delete[] inputBuf;
+			return true;
+		}
+		else if (rawBuf->header.dwType == RIM_TYPEMOUSE) {
+			//TODO: read input
+			delete[] inputBuf;
+			return true;
+		}
+
+		delete[] inputBuf;
+		return false;
+	}
+
 	static LPARAM CALLBACK WndProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
 		auto me = reinterpret_cast<Window*>(GetWindowLongPtr(hwnd, GWLP_USERDATA));
 		switch (msg) {
-			case WM_LBUTTONDOWN:
-			case WM_MBUTTONDOWN:
-			case WM_RBUTTONDOWN:
-			case WM_XBUTTONDOWN:
-			case WM_MOUSEMOVE:
-			case WM_SYSKEYDOWN:
-			case WM_KEYDOWN:
+			case WM_INPUT:
 			{
-				if (me->onInputCallback) me->onInputCallback();
+				if (ReadRawInput((HRAWINPUT)lParam)) {
+					OnKeyboardMouseEvent.Invoke();
+				}
 				break;
 			}
 			case WM_CLOSE:
@@ -92,6 +122,30 @@ private:
 			default: return DefWindowProc(hwnd, msg, wParam, lParam);
 		}
 		return NULL;
+	}
+
+	void RegisterRawInput(HWND target) const {
+		RAWINPUTDEVICE mouse, keyboard;
+
+		mouse = {
+			.usUsagePage = 0x01, //GENERIC
+			.usUsage = 0x02, //GENERIC_MOUSE
+			.dwFlags = RIDEV_INPUTSINK | RIDEV_NOLEGACY,
+			.hwndTarget = target,
+		};
+
+		keyboard = {
+			.usUsagePage = 0x01, //GENERIC
+			.usUsage = 0x06, //GENERIC_KEYBOARD
+			.dwFlags = RIDEV_INPUTSINK | RIDEV_NOLEGACY,
+			.hwndTarget = target,
+		};
+
+		RAWINPUTDEVICE devices[] = {mouse, keyboard};
+
+		if (!RegisterRawInputDevices(devices, 2, sizeof(RAWINPUTDEVICE))) {
+			throw std::exception("Could not register input devices.");
+		}
 	}
 
 	const std::wstring RegisterWindowClass(const std::wstring& windowTitle) {
@@ -125,8 +179,7 @@ private:
 		const auto screenX = GetSystemMetrics(SM_CXSCREEN);
 		const auto screenY = GetSystemMetrics(SM_CYSCREEN);
 
-		constexpr auto windowExFlags = WS_EX_NOREDIRECTIONBITMAP;
-		windowHandle = CreateWindowEx(DEBUG_VALUE(windowExFlags, windowExFlags | WS_EX_TOPMOST), className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
+		windowHandle = CreateWindowEx(defaultWindowExFlags, className.c_str(), title.c_str(), WS_POPUP, 0, 0, screenX, screenY, NULL, NULL, hInstance, NULL);
 		SetWindowLongPtr(windowHandle, GWLP_USERDATA, reinterpret_cast<LONG_PTR>(this));
 		if (!windowHandle) {
 			throw std::exception("Unable to create window");
@@ -136,13 +189,11 @@ private:
 			.width = screenX,
 			.height = screenY,
 		};
+
+		RegisterRawInput(windowHandle);
 	}
 
 public:
-	void SetOnInputCallback(const std::function<void()>& callback) {
-		onInputCallback = callback;
-	}
-
 	void Update() const {
 		if (closed) {
 			throw std::exception("Window is closed!");
@@ -153,8 +204,12 @@ public:
 		}
 	}
 
-	inline void Show() const noexcept {
-		ShowWindow(windowHandle, SW_SHOW);
+	inline void Restore() const noexcept {
+		ShowWindow(windowHandle, SW_RESTORE);
+	}
+
+	inline void Minimize() const noexcept {
+		ShowWindow(windowHandle, SW_MINIMIZE);
 	}
 
 	inline const bool IsClosed() const noexcept {
@@ -169,14 +224,22 @@ public:
 		return currentSize;
 	}
 
+	void DisableMousePassthrough() noexcept {
+		SetWindowLongPtr(windowHandle, GWL_EXSTYLE, defaultWindowExFlags & ~(WS_EX_TRANSPARENT | WS_EX_LAYERED));
+	}
+
+	void EnableMousePassthrough() noexcept {
+		SetWindowLongPtr(windowHandle, GWL_EXSTYLE, defaultWindowExFlags | WS_EX_TRANSPARENT | WS_EX_LAYERED);
+	}
+
 	inline void SetCursorVisibility(bool visible) const noexcept {
-		ShowCursor(visible);
+		auto val = ShowCursor(visible);
+		VSTUDIO_DEBUG_OUTPUT("CursorVis value = " << val);
 	}
 
 	void Close() noexcept {
 		if (closed) return;
 		DestroyWindow(windowHandle);
-		UnregisterClass(windowClass.c_str(), hInstance);
 		classes.erase(windowClass);
 		closed = true;
 	}

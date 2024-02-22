@@ -1,5 +1,6 @@
 module;
 #include <chrono>
+#include <compare>
 export module Time;
 
 using Clock = std::chrono::high_resolution_clock;
@@ -54,24 +55,19 @@ public:
 	}
 
 	template<class A>
-	constexpr bool operator<(const Duration<A>& other) const noexcept {
-		return duration < other.Get();
+	constexpr auto operator<=>(const Duration<A>& other) const noexcept {
+		return duration <=> other.Get();
 	}
 
 	template<class A>
-	constexpr bool operator>(const Duration<A>& other) const noexcept {
-		return duration > other.Get();
-	}
-
-	template<class A>
-	constexpr void operator=(const Duration<A>& other) noexcept {
-		duration = other.Get();
+	constexpr auto operator<=>(const std::chrono::duration<RepType, A>& other) const noexcept {
+		return duration <=> other;
 	}
 };
 
 export class Timepoint
 {
-	const Clock::time_point timePoint;
+	Clock::time_point timePoint;
 
 public:
 	constexpr Timepoint(const Clock::time_point& timepoint = Clock::now()) : timePoint(timepoint) {
@@ -81,24 +77,23 @@ public:
 		return timePoint;
 	}
 
-	template<class T>
 	constexpr Duration<std::nano> GetDurationSinceStart() const noexcept {
 		return timePoint.time_since_epoch();
 	}
 
 	constexpr Duration<std::nano> operator-(const Timepoint& other) const noexcept {
-		return timePoint - other.timePoint;
+		return timePoint - other.Get();
 	}
 
 	constexpr Duration<std::nano> operator+(const Timepoint& other) const noexcept {
-		return timePoint - other.timePoint;
+		return timePoint - other.Get();
 	}
 
-	constexpr bool operator<(const Timepoint& other) const noexcept {
-		return timePoint < other.timePoint;
+	constexpr auto operator<=>(const Timepoint& other) const noexcept {
+		return timePoint <=> other.Get();
 	}
 
-	constexpr bool operator>(const Timepoint& other) const noexcept {
-		return timePoint > other.timePoint;
+	constexpr void operator=(const Timepoint& other) noexcept {
+		timePoint = other.Get();
 	}
 };

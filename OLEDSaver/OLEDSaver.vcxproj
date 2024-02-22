@@ -95,6 +95,7 @@
   <ItemGroup>
     <ClCompile Include="src\D3D11Renderer.ixx" />
     <ClCompile Include="src\ErrorHandling.ixx" />
+    <ClCompile Include="src\Event.ixx" />
     <ClCompile Include="src\main.cpp" />
     <ClCompile Include="src\Optional.ixx" />
     <ClCompile Include="src\Shaders\PixelShader.ixx" />

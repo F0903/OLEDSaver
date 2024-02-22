@@ -14,7 +14,7 @@ export
 enum class ConstantBufferSlot
 {
 	Default = 0,
-	Custom = 1
+	Effect = 1
 };
 
 export

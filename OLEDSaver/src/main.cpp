@@ -13,8 +13,21 @@ import StringUtils;
 import Window;
 import Shader;
 import D3D11Renderer;
-import DefaultShutdownEffect;
+import ShutdownEffect;
+import ShutdownEffect.DefaultShutdownEffect;
 import Time;
+
+void RenderThread(Window* window, D3D11Renderer* renderer) {
+	auto effect = DefaultShutdownEffect(*window, *renderer, 1.0f);
+	effect.Initialize();
+
+	effect.PowerOff();
+
+	while(!window->IsClosed()) {
+		const auto frameStart = Timepoint();
+		effect.Update(frameStart);
+	}
+}
 
 #pragma warning(push)
 #pragma warning(disable : 4297) // WinMain is marked noexcept by default so this will make VS shut up about it.
@@ -22,34 +35,26 @@ import Time;
 int WINAPI WinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prevInstance, _In_ PSTR cmdLine, _In_ int cmdShow)
 try {
 	ASSERT(CoInitializeEx(nullptr, COINIT_MULTITHREADED));
-	auto window = Window(instance, L"OLEDSaver", Window::Style::Fullscreen);;
+	auto window = Window(instance, L"OLEDSaver", Window::Style::Fullscreen);
+	window.SetCursorVisibility(false);
 	auto renderer = D3D11Renderer(window);
 	renderer.LoadShadersParallel({
 		{DefaultVertexShader_code, ShaderType::Vertex},
 		{DefaultPixelShader_code, ShaderType::Pixel},
 	});
 
-	window.Update();
-	window.Show();
-
-	auto effect = DefaultShutdownEffect(window, renderer, 1.0f);
-	effect.Initialize();
+	std::thread renderThread(&RenderThread, &window, &renderer);
 
 	MSG message{0};
-	PeekMessage(&message, NULL, 0, 0, PM_NOREMOVE);
-	bool gotMsg = false;
-
-	while (message.message != WM_QUIT) {
-		const auto frameStart = Timepoint();
-		gotMsg = (PeekMessage(&message, NULL, 0, 0, PM_REMOVE) != 0);
+	while (!window.IsClosed()) {
+		bool gotMsg = (GetMessage(&message, NULL, 0, 0) != 0);
 		if (gotMsg) {
 			TranslateMessage(&message);
 			DispatchMessage(&message);
 		}
-
-		effect.Update(frameStart);
 	}
 
+	renderThread.join();
 	CoUninitialize();
 }
 catch (std::exception& ex) {
@@ -65,5 +70,4 @@ catch (std::exception& ex) {
 		ErrorPopUp(ConvertString(ex.what()));
 	}
 }
-
 #pragma warning(pop)

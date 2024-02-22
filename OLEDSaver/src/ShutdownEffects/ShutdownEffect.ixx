@@ -1,8 +1,10 @@
 module;
 #include <chrono>
 #include <thread>
+#include "../MacroUtils.h"
 export module ShutdownEffect;
 
+import Window;
 import D3D11Renderer;
 import Shader.PixelShader;
 import Shader.VertexShader;
@@ -11,6 +13,8 @@ import Time;
 export class ShutdownEffect
 {
 protected:
+	Window& window;
+
 	D3D11Renderer& renderer;
 
 	VertexShader& vertexShader;
@@ -20,12 +24,13 @@ protected:
 
 	float effectTime = 0.0f;
 
-	bool isDone = false;
+	bool poweringOff = false;
 	bool poweringOn = false;
 
 	Duration<std::nano> deltaTime = 0;
+	Timepoint lastInputTime;
 
-	ShutdownEffect(D3D11Renderer& renderer, VertexShader& vertexShader, PixelShader& pixelShader, float durationSeconds) : renderer(renderer), vertexShader(vertexShader), pixelShader(pixelShader), durationSeconds(durationSeconds) {
+	ShutdownEffect(Window& window, D3D11Renderer& renderer, VertexShader& vertexShader, PixelShader& pixelShader, float durationSeconds) : window(window), renderer(renderer), vertexShader(vertexShader), pixelShader(pixelShader), durationSeconds(durationSeconds) {
 	}
 
 	virtual bool DrawEffect(const Timepoint& frameStartTime) = 0;
@@ -36,34 +41,50 @@ public:
 		pixelShader.SetActive();
 		renderer.CreateFullscreenRect();
 		renderer.Initialize();
+		window.OnKeyboardMouseEvent.Subscribe([this] {
+			lastInputTime = Timepoint();
+			this->OnInputReceived();
+		});
 	}
 
-	/// <summary>
-	/// Called when "shutting down"
-	/// </summary>
-	virtual void SetShutDown() {
-		isDone = false;
+	virtual void OnInputReceived() = 0;
+
+	virtual void OnPowerOff() = 0;
+
+	virtual void OnPowerOn() = 0;
+
+	void PowerOff() {
+		VSTUDIO_DEBUG_OUTPUT("Powering off.");
 		poweringOn = false;
+		poweringOff = true;
+		OnPowerOff();
 	}
 
-	/// <summary>
-	/// Called when "powering on"
-	/// </summary>
-	void SetPowerOn() {
-		isDone = false;
+	void PowerOn() {
+		VSTUDIO_DEBUG_OUTPUT("Powering on.");
+		poweringOff = false;
 		poweringOn = true;
+		OnPowerOn();
 	}
 
 	void Update(const Timepoint& frameStart) {
 		using namespace std::chrono_literals;
-		constexpr Duration<std::milli> idleSleepTime = 1000ms;
+		constexpr auto idleSleepTimeMs = 1000ms;
+		constexpr Duration<std::milli> idleSleepTime = idleSleepTimeMs;
 
 		const bool sleptFrame = DrawEffect(frameStart);
 		if (sleptFrame) {
-			std::this_thread::sleep_for(1s);
+			std::this_thread::sleep_for(idleSleepTimeMs);
 		}
 		const auto frameEnd = Timepoint();
 		deltaTime = frameEnd - frameStart;
-		if (sleptFrame) deltaTime -= idleSleepTime;
+		if (sleptFrame) {
+			deltaTime -= idleSleepTime;
+			auto secondsSinceInput = (Timepoint() - lastInputTime).Cast<std::ratio<1,1>>();
+			VSTUDIO_DEBUG_OUTPUT("Seconds since input: " << secondsSinceInput.Get());
+			if (!poweringOff && (secondsSinceInput) >= 10s) {
+				PowerOff();
+			}
+		}
 	}
 };

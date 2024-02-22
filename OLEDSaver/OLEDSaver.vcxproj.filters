@@ -51,6 +51,9 @@
     <ClCompile Include="src\ShutdownEffects\ShutdownEffect.ixx">
       <Filter>Source Files</Filter>
     </ClCompile>
+    <ClCompile Include="src\Event.ixx">
+      <Filter>Source Files</Filter>
+    </ClCompile>
   </ItemGroup>
   <ItemGroup>
     <ClInclude Include="src\MacroUtils.h">
