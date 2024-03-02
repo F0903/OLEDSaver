@@ -19,8 +19,6 @@ import Time;
 
 void RenderThread(Window* window, D3D11Renderer* renderer) {
 	auto effect = DefaultShutdownEffect(*window, *renderer, 1.0f);
-	effect.Initialize();
-
 	effect.PowerOff();
 
 	while(!window->IsClosed()) {

@@ -31,22 +31,23 @@ protected:
 	Timepoint lastInputTime;
 
 	ShutdownEffect(Window& window, D3D11Renderer& renderer, VertexShader& vertexShader, PixelShader& pixelShader, float durationSeconds) : window(window), renderer(renderer), vertexShader(vertexShader), pixelShader(pixelShader), durationSeconds(durationSeconds) {
-	}
-
-	virtual bool DrawEffect(const Timepoint& frameStartTime) = 0;
-
-public:
-	virtual void Initialize() {
 		vertexShader.SetActive();
 		pixelShader.SetActive();
 		renderer.CreateFullscreenRect();
 		renderer.Initialize();
-		window.OnKeyboardMouseEvent.Subscribe([this] {
+		window.OnKeyboardMouseEvent.Subscribe(typeid(this), [this] {
 			lastInputTime = Timepoint();
 			this->OnInputReceived();
 		});
 	}
 
+	virtual ~ShutdownEffect() {
+		window.OnKeyboardMouseEvent.Unsubscribe(typeid(this));
+	}
+
+	virtual bool DrawEffect(const Timepoint& frameStartTime) = 0;
+
+public:
 	virtual void OnInputReceived() = 0;
 
 	virtual void OnPowerOff() = 0;

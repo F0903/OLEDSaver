@@ -4,7 +4,6 @@ module;
 #include <Windows.h>  
 #include <exception>
 #include <type_traits>
-#include <functional>
 #include "MacroUtils.h"
 export module Window;
 
@@ -36,7 +35,7 @@ public:
 	};
 
 
-	static inline Event<void()> OnKeyboardMouseEvent;
+	static inline Event<> OnKeyboardMouseEvent;
 
 private:
 	inline static std::unordered_set<std::wstring> classes;

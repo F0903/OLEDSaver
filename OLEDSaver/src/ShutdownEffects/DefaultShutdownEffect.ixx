@@ -31,10 +31,6 @@ public:
 		static_cast<PixelShader&>(renderer.LoadShader(DefaultPixelShader_code, ShaderType::Pixel)),
 		durationSeconds
 	) {
-	}
-
-	void Initialize() override {
-		ShutdownEffect::Initialize();
 		pixelShader.InitConstantBuffer<ConstantBuffer>({effectTime, durationSeconds}, ConstantBufferSlot::Effect);
 	}
 
